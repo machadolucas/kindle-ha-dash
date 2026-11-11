@@ -193,3 +193,16 @@ Technique references: [KOReader KUAL descriptor](https://github.com/koreader/kor
 [KOReader PW3 hardware configuration](https://github.com/koreader/koreader/blob/master/frontend/device/kindle/device.lua),
 and the author's [Wario USB-power sysfs example](https://www.mobileread.com/forums/showthread.php?t=347934).
 The client is original shell code; nothing from these projects is vendored.
+
+## Installing without KUAL (scriptlets, WinterBreak2 and other modern jailbreaks)
+
+Modern jailbreaks replace KUAL with *scriptlets*: `.sh` files in the Kindle's
+`documents` folder that show up in the library and run as root when tapped.
+
+1. Connect the Kindle over USB and run `kindle/install-usb.sh /Volumes/Kindle`.
+2. Edit `extensions/kindle-ha-dash/config.sh` on the Kindle (`BASE_URL`, `TOKEN`).
+3. Eject. The library now has **Dashboard: Start**, **Stop**, **Refresh once**
+   and **Self-test** (which writes `kindle-ha-dash-selftest.txt` to the Kindle's
+   storage, readable over USB).
+
+No SSH is required; logs and the self-test report are read over USB.
