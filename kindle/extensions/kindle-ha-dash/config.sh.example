@@ -62,3 +62,7 @@ LOG_MAX_BYTES=131072             # >= 1024; keep one .old after the limit.
 # PROC_ROOT='/proc'
 # RTC_ROOT='/sys/class/rtc'        # Used for auto-detection and selftest listing.
 # FIRMWARE_FILE='/etc/prettyversion.txt' # selftest only.
+
+# Seconds to wait after wifi-off before repainting the image (hides the stock
+# airplane-mode icon). 0 disables the repaint.
+WIFI_OFF_REDRAW_DELAY_SECONDS=3

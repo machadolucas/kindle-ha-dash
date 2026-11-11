@@ -330,14 +330,14 @@ khd_status() {
 khd_cycle() {
     khd_read_battery
     khd_log "wake battery=${KHD_BATTERY:-unknown} charging=$KHD_CHARGING usb_power=$KHD_USB_POWERED"
-    KHD_HEADER_SLEEP= KHD_FULL_REFRESH=0
+    KHD_HEADER_SLEEP= KHD_FULL_REFRESH=0 khd_shown=0
     if khd_low_battery; then
         khd_log 'low battery: fetch skipped'
         khd_status 'battery low, please charge'
         KHD_NEXT_SLEEP=$MAX_SLEEP_SECONDS
     else
         if khd_wifi_connect && khd_fetch; then
-            khd_display || { khd_log 'display failed'; khd_status "display failed $(khd_date +%H:%M)"; }
+            if khd_display; then khd_shown=1; else khd_log 'display failed'; khd_status "display failed $(khd_date +%H:%M)"; fi
         else
             khd_status "no connection $(khd_date +%H:%M)"
         fi
@@ -351,6 +351,13 @@ khd_cycle() {
         khd_log "awake mode interval=$KHD_NEXT_SLEEP"
     else
         khd_wifi_set 0 || :
+        # The stock UI paints an airplane-mode icon over our image when wifi
+        # goes off; wait for it, then repaint (partial refresh, no flash).
+        if [ "$khd_shown" = 1 ] && [ "${WIFI_OFF_REDRAW_DELAY_SECONDS:-3}" -gt 0 ]; then
+            khd_sleep "${WIFI_OFF_REDRAW_DELAY_SECONDS:-3}"
+            KHD_FULL_REFRESH=0
+            khd_display || :
+        fi
     fi
 }
 
