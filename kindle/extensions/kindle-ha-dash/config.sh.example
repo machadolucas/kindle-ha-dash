@@ -1,55 +1,71 @@
 #!/bin/sh
-# Copy to config.sh. This is sourced shell; quote values and keep it private.
+# Copy to config.sh. Trusted shell configuration: quote values; keep it private.
 # shellcheck disable=SC2034
+BASE_URL='https://home.example.com' # Origin/base path, without API endpoint/query.
+TOKEN='replace_with_your_token'    # Percent-encoded into the image URL path.
 
-BASE_URL='https://home.example.com' # No trailing query, fragment or credentials.
-TOKEN='replace_with_your_token'    # Sent as a percent-encoded URL path segment.
-
-# All times are integer seconds. Invalid/missing headers use the fallback,
-# then both server and fallback intervals are clamped to MIN..MAX.
+# Integer seconds; server X-Sleep-Seconds and fallback are clamped MIN..MAX.
 FALLBACK_SLEEP_SECONDS=1800
-MIN_SLEEP_SECONDS=60              # Must be >= 1; 60 recommended.
-MAX_SLEEP_SECONDS=7200            # Must be >= MIN.
-AWAKE_INTERVAL_SECONDS=300        # Charging/debug: no suspend, Wi-Fi stays on.
-WIFI_TIMEOUT_SECONDS=30           # Per attempt, must be >= 1.
+MIN_SLEEP_SECONDS=60
+MAX_SLEEP_SECONDS=7200
+AWAKE_INTERVAL_SECONDS=300        # Debug/charging/USB cap; Active still pauses fetch.
+                                 # Ready-window abort hold also attempts CPU-awake.
+WIFI_TIMEOUT_SECONDS=30           # Per attempt, >= 1.
 WIFI_RETRIES=2                    # Retries after first attempt; 0..20.
-HTTP_TIMEOUT_SECONDS=45          # curl total time budget, must be >= 1.
-LOW_BATTERY_PERCENT=10           # 0..100; unknown battery does not inhibit fetch.
+HTTP_TIMEOUT_SECONDS=45           # curl total request budget, >= 1.
+LOW_BATTERY_PERCENT=10            # 0..100; unknown battery does not inhibit fetch.
+RESUME_DELAY_SECONDS=3
+WIFI_TOGGLE_DELAY_SECONDS=2
+WIFI_OFF_REDRAW_DELAY_SECONDS=3   # Repaint after stock airplane icon; 0 disables.
 
-STOP_FRAMEWORK=0                 # 1 stops the jobs below; stop/exit restarts them.
-# FRAMEWORK_JOBS='framework lab126_gui' # Change to match installed Upstart jobs.
+# Powerd owns suspend. Never writes kernel power state or RTC wakealarm nodes.
+AUTO_SCREENSAVER=1                # After first successful display, one button toggle.
+SCREENSAVER_WAIT_SECONDS=20       # Confirmation budget; 0..120.
+SCREENSAVER_REDRAW_DELAY_SECONDS=3
+WAKE_REDRAW=1                     # Cached partial repaint after wake while locked.
+WAKE_TOLERANCE_SECONDS=2          # Allow scheduled fetch this many seconds early.
+EVENT_LOG_VERBOSE=1               # Exact state/status and CLI event diagnostics.
+EVENT_WAIT_SECONDS=5              # lipc-wait-event timeout; 1..60.
+POLL_INTERVAL_SECONDS=5           # Missing event tool fallback; 1..60.
+RTC_WAKEUP_MODE=relative          # relative|epoch; epoch is experimental, not PW3 default.
+RTC_WAKEUP_USE_INT=1              # 1 uses lipc-set-prop -i (documented integer type).
+RTC_WAKEUP_CANCEL_MODE=none       # none|zero; no verified cancellation operation.
+                                 # zero experimentally writes rtcWakeup 0 on Stop.
+SUSPEND_DEFER_MODE=none           # none|deferSuspend. Keep none on target firmware.
+                                 # defer units/state effects require device validation.
+CYCLE_ABORT_SUSPEND=1             # Finite 5s heartbeat during work; ready state only.
+                                 # Researched on other Kindles; validate on PW3.
+                                 # Independent of debug/USB/charging awake hold.
+FRONTLIGHT_OFF=1                  # Saves flIntensity then writes 0; PW3 may only dim.
+# FRONTLIGHT_STATE_FILE='/mnt/us/extensions/kindle-ha-dash/frontlight.saved'
+                                 # Persistent original value; Stop retries restoration.
+STOP_FRAMEWORK=0                  # Required for loop. 1 permitted only for --once.
+# FRAMEWORK_JOBS='framework lab126_gui' # Legacy once-only experiment; verify jobs.
 
-RTC_DEVICE=''                    # Auto: /sys/class/rtc/rtc1 if wakealarm exists,
-                                 # else rtc0. Set to an RTC DIRECTORY, not node.
-# POWER_STATE_PATH='/sys/power/state'
-# RESUME_DELAY_SECONDS=3          # Delay after suspend returns, before Wi-Fi I/O.
-# WIFI_TOGGLE_DELAY_SECONDS=2
-
-HTTP_CLIENT_BIN=''               # Auto: extension bin/curl, USBNetwork curl,
-                                 # then PATH curl. A binary path, no arguments.
-CA_BUNDLE=''                     # Optional readable PEM CA bundle path.
-INSECURE_TLS=0                   # 1 disables identity verification: last resort!
-                                 # A network attacker could obtain your token.
-
+HTTP_CLIENT_BIN=''               # Auto: extension bin/curl, USBNetwork curl, PATH.
+CA_BUNDLE=''                     # Optional readable PEM trust bundle.
+INSECURE_TLS=0                   # 1 disables identity checks and risks token exposure.
 LOG_FILE='/mnt/us/extensions/kindle-ha-dash/dashboard.log'
-LOG_MAX_BYTES=131072             # >= 1024; keep one .old after the limit.
-
-# FBINK_BIN='auto'               # Auto: PATH, /mnt/us/libkh/bin/fbink,
-                                 # /mnt/us/koreader[/bin]/fbink. '' forces eips.
+LOG_MAX_BYTES=131072             # >= 1024; rotates one .old file.
+# FBINK_BIN='auto'               # PATH, libkh, KOReader; '' forces eips.
 # EIPS_STATUS_COL=0
-# EIPS_STATUS_ROW=59              # Auto parses eips -i rows, else PW3 default 59.
+# EIPS_STATUS_ROW=auto           # eips -i row count; fallback PW3 row 59.
 
-# Advanced overrides (defaults shown). State/cache in RAM; no persistent writes
-# except logs/config. Changing STATE_DIR relocates derived paths unless explicit.
+# Advanced paths/commands. Commands are one executable/path, without arguments.
+# Stop before changing runtime paths so Stop can find the original instance.
+# CLIENT_VERSION='1.0.0'
 # STATE_DIR='/tmp/kindle-ha-dash'
 # PIDFILE='/tmp/kindle-ha-dash/dash.pid'
 # TEMP_DIR='/tmp/kindle-ha-dash/work'
-# IMAGE_FILE='/tmp/kindle-ha-dash/image.png' # Keep on same filesystem as TEMP_DIR.
+# IMAGE_FILE='/tmp/kindle-ha-dash/image.png' # Same filesystem as TEMP_DIR.
 # FRAMEWORK_MARKER='/tmp/kindle-ha-dash/framework-stopped'
 # DEBUG_FILE='/mnt/us/kindle-ha-dash.debug'
 # STOP_FILE='/mnt/us/kindle-ha-dash.stop'
 # LIPC_SET_BIN='lipc-set-prop'
 # LIPC_GET_BIN='lipc-get-prop'
+# LIPC_WAIT_BIN='lipc-wait-event'
+# POWERD_TEST_BIN='powerd_test'
+# DMESG_BIN='dmesg'
 # GASGAUGE_BIN='gasgauge-info'
 # USB_POWER_PATH='/sys/devices/system/wario_charger/wario_charger0/connected'
 # CHARGING_PATH='/sys/devices/system/wario_charger/wario_charger0/charging'
@@ -60,9 +76,5 @@ LOG_MAX_BYTES=131072             # >= 1024; keep one .old after the limit.
 # DATE_BIN='date'
 # KILL_BIN='kill'
 # PROC_ROOT='/proc'
-# RTC_ROOT='/sys/class/rtc'        # Used for auto-detection and selftest listing.
-# FIRMWARE_FILE='/etc/prettyversion.txt' # selftest only.
-
-# Seconds to wait after wifi-off before repainting the image (hides the stock
-# airplane-mode icon). 0 disables the repaint.
-WIFI_OFF_REDRAW_DELAY_SECONDS=3
+# RTC_ROOT='/sys/class/rtc'        # Read-only selftest listing only.
+# FIRMWARE_FILE='/etc/prettyversion.txt' # Selftest only.

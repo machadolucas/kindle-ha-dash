@@ -1,178 +1,222 @@
 # Kindle HA Dashboard client
 
-KUAL extension for a jailbroken Paperwhite 3 (7th generation, 1072×1448,
-firmware 5.x). Downloads an already rendered PNG; it does not run a browser.
-No boot hooks, bundled binaries, or changes to the Home Assistant integration.
-All device scripts run through `sh`; FAT execute bits and symlinks are unnecessary.
+Target: jailbroken Kindle Paperwhite 3 (7th generation, 1072×1448), firmware
+**5.16.2.1.1**, using library scriptlets and USB storage. The client downloads an
+already rendered PNG; it does not run a browser. No SSH, boot hook, bundled binary,
+or change to the Home Assistant integration is required. Scripts run through `sh`;
+FAT execute bits and symlinks are unnecessary.
 
-## Install and configure
+## Install over USB
 
-On your Mac, from the repository root, **stop an existing dashboard before an
-upgrade**, then run:
-
-```sh
-kindle/install.sh root@<kindle-ip>
-```
-
-The installer uses SSH and SCP, creates `/mnt/us/extensions/kindle-ha-dash/`,
-copies only the shipped scripts/descriptors/example, preserves an existing
-`config.sh`, and creates one from the example on first install. It neither
-starts the client nor installs startup hooks. New OpenSSH uses SFTP by default;
-the installer selects legacy SCP with `-O`. For an old Mac client without `-O`,
-use `SCP_LEGACY=0 sh kindle/install.sh root@<kindle-ip>`.
-
-Alternatively, copy `extensions/kindle-ha-dash/` from this directory into the
-Kindle's `/mnt/us/extensions/` over USB, and copy `config.sh.example` to
-`config.sh` there. Safely eject USB storage before running the extension.
-
-Edit the **device's** `config.sh` over SSH. Set `BASE_URL` to the HTTPS origin
-(or the configured base path) and `TOKEN` to the integration's token. Do not add
-the `/api/kindle_dash/...` endpoint to `BASE_URL`. Quote shell values; the config
-is sourced as trusted shell code. Keep the config private. The local config
-path is ignored by `kindle/.gitignore` and is never uploaded by the installer.
-Configuration is read at launch; stop the client before changing runtime paths
-or command overrides so Stop can still locate the original process and state.
-
-The example documents every required option. Defaults are 30-minute fallback,
-60-second minimum, 2-hour maximum, 30-second Wi-Fi connection timeout, two
-retries after the first attempt, 45-second HTTP timeout, 10% low-battery cutoff,
-and 5-minute maximum intervals when awake. Configured numeric values must be
-unsigned decimal integers of at most nine digits. Invalid limits stop startup
-with a diagnostic; leading zeros are accepted.
-
-## First device test
-
-Keep USB power connected and create the debug flag before experimenting:
+Stop an existing dashboard using **Dashboard: Stop** before upgrading. Connect
+USB storage, then run on the Mac from the repository root:
 
 ```sh
-touch /mnt/us/kindle-ha-dash.debug
-sh /mnt/us/extensions/kindle-ha-dash/bin/selftest.sh
-sh /mnt/us/extensions/kindle-ha-dash/bin/start.sh --once
-tail -f /mnt/us/extensions/kindle-ha-dash/dashboard.log
+sh kindle/install-usb.sh /Volumes/Kindle
 ```
 
-`selftest.sh` requires the dashboard to be stopped and shares its singleton lock.
-It reports firmware, `eips -i`, RTC nodes, Wi-Fi state, battery, USB power, FBInk,
-curl version and an HTTPS request to the **BASE_URL root without the token**.
-Any valid root HTTP status demonstrates transport completion; even a root 404
-does not test the authenticated image endpoint. In insecure mode it explicitly
-reports that identity checking is disabled. Missing/failed RTC or TLS checks
-produce a nonzero exit status.
+The installer copies scripts into `extensions/kindle-ha-dash/` and four library
+scriptlets into `documents/`. It preserves an existing `config.sh`, or creates
+one from the example. Edit `extensions/kindle-ha-dash/config.sh` on the mounted
+Kindle: set `BASE_URL` to the HTTPS origin/base path and `TOKEN` to the integration
+token. Do not append `/api/kindle_dash/...` to the base URL. Keep Unix LF endings,
+quote shell values, and keep this trusted shell configuration private.
 
-The RTC test clears, programs an alarm 120 seconds ahead, verifies its readback,
-and clears it again, **without writing to `/sys/power/state`**. It refuses to
-overwrite an existing nonzero alarm. Do not run another RTC-owning application
-concurrently. SIGKILL or power loss cannot execute shell cleanup; if interrupted
-that way, check/clear the alarm before testing further.
+Safely eject and disconnect USB storage. The library entries are **Dashboard:
+Self-test**, **Refresh once**, **Start**, and **Stop**. Use the stock Wi-Fi settings
+to save a usable network first; the client does not provision networks.
 
-KUAL exposes **Start dashboard**, **Stop dashboard**, and **Refresh once**.
-Start returns immediately; check for `dashboard started` in the log to confirm
-the background process actually started. Refresh once is also detached, fetches
-and displays one cycle, and never suspends or waits for a refresh interval. It
-restores normal power/UI settings and enables Wi-Fi when done. Stop the loop
-before Refresh once; a second instance is refused.
+Read `kindle-ha-dash-selftest.txt` and
+`extensions/kindle-ha-dash/dashboard.log` by reconnecting USB. Preserve the log
+and its `.old` rotation when investigating. USB storage can invoke the stock
+USB screen; it is not a reliable way to observe an unplugged suspend cycle.
 
-For the continuous loop:
+The older SSH installer (`install.sh`) and KUAL descriptors remain optional
+legacy tooling. They are not the installation or recovery path for this target.
+
+## First test and recovery
+
+1. Tap **Self-test** while the dashboard is stopped and Wi-Fi is enabled.
+2. Reconnect USB and read `kindle-ha-dash-selftest.txt`.
+3. Eject, tap **Refresh once**, then check the image and log. This fetches and
+   draws once, restores settings, and exits without auto-entering screensaver.
+4. Tap **Start** for the continuous loop. It launches in the background; confirm
+   `dashboard started` in the log. Stop the loop before running another test.
+5. Test several unplugged timed wakes before relying on unattended operation.
+
+Self-test shares the singleton lock and refuses a running dashboard. It reads
+firmware, display info, RTC nodes, exact powerd state/status, frontlight, Wi-Fi,
+battery, USB power and tool versions. **RTC checks are read-only:** no alarm is
+cleared/programmed and no suspend, redraw, Wi-Fi toggle or light change occurs.
+The HTTPS probe sends no token to the BASE_URL root. A root 404 can demonstrate
+transport completion; it does not validate the authenticated image endpoint.
+A failed probe/configuration returns nonzero. Self-test cannot prove timed wake.
+
+**Stop** sets `/mnt/us/kindle-ha-dash.stop`, signals only a PID verified against
+its command line, waits up to ten seconds, then may kill that verified process.
+It requests Wi-Fi on, restores frontlight and `preventScreenSaver=0`, and restores
+any jobs recorded by a legacy once-only framework experiment. A new explicit
+Start/Refresh once removes an old stop flag. If needed, create the stop flag over
+USB; a suspended CPU cannot inspect it until the next wake. No startup hook is
+installed, so rebooting does not launch the dashboard.
+
+The original light setting survives crashes in
+`extensions/kindle-ha-dash/frontlight.saved`. Stop restores it even when no
+process remains; successful restoration removes the file, and failure retains
+it for another Stop attempt. Do not delete it before restoration. SIGKILL/power
+loss cannot run a shell cleanup trap, so use Stop after a crash.
+
+## Powerd cycle
+
+Raw kernel suspend was removed after the real device failed around suspend/wake
+with VFP/undefined-instruction and Wi-Fi trouble. The loop does **not** write
+`/sys/power/state`, call `rtcwake`, or program `/sys/class/rtc/*/wakealarm`.
+Amazon's powerd and framework own suspend/resume.
+
+Start performs one initial fetch/display. With `AUTO_SCREENSAVER=1`, its first
+successful display may request `powerButton 1` once while Active, falling back
+to `powerd_test -p` if the setter fails and state is still Active. It waits for
+confirmation and never repeatedly toggles the button. Stock screensaver/airplane
+icon painting can overwrite the image, so cached partial repaints run after
+entering screensaver, returning to screensaver, wake and Wi-Fi-off delays.
+If the initial fetch fails while Active, retries wait for manual or idle
+screensaver entry. Use Refresh once after Stop to diagnose the connection.
+
+The loop reads both `com.lab126.powerd state` and `status`, preserving their exact
+output in diagnostics. Successful `state` reads classify Active separately from
+ScreenSaver/ReadyToSuspend/Suspended. **Scheduled fetches and repaints pause while
+Active or unknown**, including debug/USB/charging awake mode. The initial cycle
+and Refresh once are explicit exceptions. The power button remains under user
+control after initial entry; the loop does not force the user back into sleep.
+
+It waits with:
 
 ```sh
-sh /mnt/us/extensions/kindle-ha-dash/bin/start.sh
-# When finished:
-sh /mnt/us/extensions/kindle-ha-dash/bin/stop.sh
+lipc-wait-event -s 5 com.lab126.powerd readyToSuspend,wakeupFromSuspend,resuming
 ```
 
-Always use the full installed script path, as above. PID ownership is checked
-against `/proc/<pid>/cmdline` before signaling a process; unrelated reused PIDs
-are never killed. A stale PID/lock is recovered on the next launch. If two
-launches race, retry Start after a second. State and the last downloaded image
-live in RAM under `/tmp/kindle-ha-dash/`; logs live alongside the extension.
+The timeout is configurable. Events are parsed by their first field; arguments
+and raw CLI output are logged. State polling catches transitions missed during
+work. A missing event tool falls back to polling, which cannot guarantee catching
+the ready window. Broken commands/event storms have a minimum pause to avoid spin.
 
-## Escape hatches and power behavior
+At ReadyToSuspend the client sets **relative seconds** using
+`lipc-set-prop -i com.lab126.powerd rtcWakeup <seconds>`. The value is the remaining
+wall time until the scheduled target, with a minimum interval floor. It re-arms
+on ready notifications/polls. `RTC_WAKEUP_MODE=epoch` and
+`RTC_WAKEUP_USE_INT=0` are experimental compatibility overrides, not target
+recommendations. Successful setter exit is not proof that hardware will wake.
+After wake it records relevant dmesg lines, settles, rechecks state, and fetches
+only when due while still in screensaver. Early wakes can repaint the cache and
+skip downloading. A much longer empty event wait also triggers inferred-wake
+diagnostics, settling and a state-checked repaint; this can indicate suspend or a
+clock correction and is not proof of an RTC wake.
 
-* **Debug flag**: `/mnt/us/kindle-ha-dash.debug` keeps the device awake with Wi-Fi
-  enabled. Charging or detected USB power does the same, including a full battery
-  that is no longer charging. Awake sleep intervals are capped by
-  `AWAKE_INTERVAL_SECONDS`. Radio off/on retries are suppressed while awake;
-  enable/wait retries still run. Remove the debug flag **and** unplug power to
-  exercise real suspend. Plugging USB into a computer can invoke the stock USB
-  storage screen; prefer a wall charger or established USBNetwork setup for SSH.
-* **Stop flag**: create `/mnt/us/kindle-ha-dash.stop` from SSH or USB storage.
-  The client checks it during Wi-Fi waits, ordinary sleeps, and between cycles.
-  A suspended shell cannot inspect files until the device wakes. Stop restores
-  the UI, enables Wi-Fi and clears the alarm; explicit Start / Refresh once removes
-  a previous stop flag. KUAL Stop and `stop.sh` also signal the verified PID, then
-  escalate to KILL after ten seconds if needed. Check the log for restore errors.
-* **Low battery**: below the configured cutoff and not charging, the client prints
-  `battery low, please charge`, skips all downloads, disables Wi-Fi and requests
-  `MAX_SLEEP_SECONDS` before checking again. Debug/USB awake mode takes priority
-  over disabling Wi-Fi and caps that interval. Unknown battery percentage is sent
-  as `battery=` and does not activate the cutoff.
-* **Stock UI**: `preventScreenSaver=1` is held while running and restored to `0`
-  on exit. `STOP_FRAMEWORK=0` by default. With `1`, configured Upstart jobs are
-  recorded before stopping, and exit/Stop starts them again—even if the option
-  is later changed. With the framework stopped, use SSH or the stop flag if KUAL
-  is unavailable. A reboot returns to the stock UI: nothing auto-starts.
+During a scheduled cycle `CYCLE_ABORT_SUSPEND=1` starts a **finite** background
+heartbeat. Every five seconds, only while still in screensaver and specifically
+ReadyToSuspend, it arms a safety wake then writes `abortSuspend 1`. A cycle that
+starts Ready receives the same protection immediately. The guard budget derives
+from configured Wi-Fi attempts, HTTP timeout, redraw delays and a margin. It
+stops after work or its deadline. No persistent suspend flag is held.
+This behavior is researched on other Kindles, **not verified on this PW3
+firmware**; inspect setter results and state transitions during device tests.
 
-For ordinary battery operation each cycle enables Wi-Fi, waits for `CONNECTED`,
-fetches and displays, disables Wi-Fi, programs the PMIC RTC, verifies its alarm,
-then separately writes `mem` to the power-state node. A successful radio-disable
-command is required before suspend. After resume it waits a few seconds before
-touching Wi-Fi. An early USB/debug wake re-enables Wi-Fi. If suspend is refused,
-returns immediately, or RTC verification fails, it sleeps the remaining interval
-in interruptible five-second slices; it does not spin. These ordinary sleeps
-also notice a new debug/USB override. The RTC is cleared after resume/failure.
+`SUSPEND_DEFER_MODE=none` is the default; its only alternative is `deferSuspend`.
+That optional mode writes a finite computed value and refuses cycle work if it
+leaves screensaver. Published projects disagree about its state effect, and units
+and behavior require firmware validation. `CYCLE_ABORT_SUSPEND` is a separate
+switch; setting defer mode to none does not disable the heartbeat. The client
+never uses `suspendGrace`. `STOP_FRAMEWORK=1` is refused for the loop and allowed
+only for the legacy Refresh once experiment; retain `0` on this target.
 
-Fetches accept **only** HTTP 200 with the complete eight-byte PNG magic, then
-move the temporary download over the cached file. Error responses, TLS failures,
-timeouts and invalid signatures preserve the previous image; a bottom status
-line reports `no connection HH:MM`. This is a signature check, not a full PNG
-decoder: dimensions, grayscale format and PNG integrity remain the server's
-contract, and display-command errors are logged. Header matching is case
-insensitive, strips CRLF, and resets between HTTP response blocks. Missing or
-invalid sleep headers use the fallback, with the same min/max clamps. Only
-`X-Full-Refresh: 1` requests flashing; other values use partial refresh.
+There is no verified powerd alarm cancellation operation.
+`RTC_WAKEUP_CANCEL_MODE=none` therefore makes no cancellation write on Stop: a
+**single previously armed wake may remain**, but the stopped client cannot fetch.
+The optional `zero` mode experimentally writes `rtcWakeup 0`; neither success
+nor that value's cancellation semantics are proven on the target firmware.
 
-Sleep means time **after** fetch/display, rather than a fixed wall-clock cadence.
-Logs record cycle duration, requested sleep, actual suspend time and drift. Epoch
-time is used because old kernels differ on whether uptime includes suspend;
-clock corrections can affect drift measurements. Negative elapsed values are
-clamped when calculating remaining sleep. Rotation keeps one `.old` file after
-`LOG_MAX_BYTES` is exceeded. Request URLs, token values and curl stderr are never
-logged. Do not run `sh -x` or paste `config.sh` into diagnostic reports.
-Transport failures include the numeric curl exit code: common codes are 6 (DNS),
-7 (connection), 28 (timeout), 35 (TLS negotiation), and 60 (certificate validation).
+## Other behavior and configuration
 
-## Hardware overrides and troubleshooting
+The example config lists all switches, command and path overrides. All numeric
+settings accept unsigned decimal values up to nine digits; invalid limits refuse
+startup. Defaults are 30-minute fallback, 60-second minimum, two-hour maximum,
+30 seconds per Wi-Fi attempt, two retries after the first attempt, 45-second HTTP
+timeout, 10% battery cutoff, and a five-minute awake interval cap.
 
-| Assumption / symptom | Config override or check |
+Debug flag `/mnt/us/kindle-ha-dash.debug`, charging or detected USB power selects
+awake mode: Wi-Fi stays enabled, radio off/on retries are suppressed and the
+interval is capped. A real ready event still arms a safety wake. At each
+observed ready transition awake mode also
+requests `abortSuspend 1` to keep the CPU awake. This hold is independent of
+`CYCLE_ABORT_SUSPEND` and lasts while the awake override remains; charging usually
+prevents ready itself. Check `awake mode: abortSuspend hold rc=`: if rejected,
+CPU-awake behavior is unconfirmed and powerd may suspend despite the flag.
+Remove the flag and unplug power to measure ordinary battery behavior. Returning
+to screensaver disables Wi-Fi unless an awake override applies. Below the battery
+cutoff, downloads are skipped and the next
+interval is MAX; awake mode can shorten it. Unknown battery is sent as an empty
+value and does not activate the cutoff.
+
+`FRONTLIGHT_OFF=1` saves LIPC `flIntensity` and requests zero at startup and each
+cycle. **On PW3, LIPC zero may merely dim the hardware**, according to KOReader's
+model-specific handling. This client does not reproduce KOReader's raw hardware
+light writes. Check the physical light and stock UI when measuring consumption;
+`FRONTLIGHT_OFF=0` disables this client's save/zero step.
+
+Only HTTP 200 plus the complete eight-byte PNG signature replaces the cache.
+Failures preserve the previous image and show a status line where drawing is
+allowed. This is not full PNG decoding: dimensions, grayscale and integrity are
+the server's contract. Header names are case-insensitive; invalid/missing
+`X-Sleep-Seconds` uses the fallback and all intervals are clamped. Only
+`X-Full-Refresh: 1` requests a flashing full refresh. Time is measured after a
+cycle, rather than maintaining a fixed wall-clock grid.
+
+curl discovery checks extension `bin/curl`, `/mnt/us/usbnet/bin/curl`, then PATH.
+No curl binary is bundled and USBNetwork is not required. Override
+`HTTP_CLIENT_BIN` for a compatible binary and `CA_BUNDLE` for a trust bundle.
+`INSECURE_TLS=1` disables identity checks and can expose the token to an
+impersonating server; it does not fix unsupported TLS protocols. Redirects are
+not followed. Request URLs, tokens and curl stderr are not logged; avoid `sh -x`
+and do not paste config into reports.
+
+Cache/PID/temporary files default to RAM under `/tmp/kindle-ha-dash`; logs and
+the light recovery file persist in the extension. Keep temp/cache on the same
+filesystem for atomic replacement. Stop before changing runtime paths. Stale
+locks recover on launch after process-identity checks. Never delete a live lock.
+
+## Troubleshooting over USB
+
+| Log evidence / symptom | Check |
 | --- | --- |
-| PW3 wake clock is `rtc1`, not `rtc0` | `RTC_DEVICE` is an RTC directory. Auto-detection prefers `rtc1` with a `wakealarm` node; otherwise `rtc0`. `RTC_ROOT` changes discovery. Run selftest and verify an actual timed wake yourself. |
-| Kernel suspend | `POWER_STATE_PATH` defaults to `/sys/power/state`; `RESUME_DELAY_SECONDS=3`. No `rtcwake`, `powerd_test` or firmware-specific sleep service is required. A successful write can still return early; read the drift log. |
-| Wi-Fi fails after resume | Increase `RESUME_DELAY_SECONDS`, `WIFI_TIMEOUT_SECONDS`, `WIFI_RETRIES` or `WIFI_TOGGLE_DELAY_SECONDS`. Connection state comes from `com.lab126.wifid cmState`. A saved usable network is required; the extension does not provision one. |
-| TLS fails on old firmware | Set `HTTP_CLIENT_BIN` to a curl-compatible executable. Discovery order: extension `bin/curl`, `/mnt/us/usbnet/bin/curl`, PATH `curl`. Supply your own compatible binary separately; none is bundled. Check date/time, CA trust and supported TLS versions using selftest. |
-| CA errors | Set `CA_BUNDLE` to a readable PEM trust bundle. `INSECURE_TLS=1` is a last-resort diagnostic escape hatch: it exposes the token to an impersonating server. Restore `0`; it does not fix an unsupported TLS protocol/cipher. Redirects are deliberately not followed. |
-| Battery / full USB-power detection | `GASGAUGE_BIN` supplies percentage; charging comes from LIPC, then `CHARGING_PATH`, then a textual gasgauge status fallback if available. `USB_POWER_PATH` defaults to `/sys/devices/system/wario_charger/wario_charger0/connected`; confirm selftest reports `1` while plugged in, including at 100%. If it reports unknown, set the correct node and keep the debug flag for SSH. |
-| FBInk / eips rendering | `FBINK_BIN` auto-searches PATH, `/mnt/us/libkh/bin`, and `/mnt/us/koreader` plus its `bin/`. Set it to an explicit path, or `''` to force eips. Failed FBInk calls fall back to eips. Full eips refresh clears first, then uses `-f -g`. Verify both refresh modes on your firmware. |
-| Bottom text is clipped | `EIPS_STATUS_COL` and `EIPS_STATUS_ROW`; auto row uses `eips -i`'s row count if recognizable, otherwise PW3's assumed row 59. FBInk uses `-y -1`. Confirm the font/orientation and bottom line on-device. |
-| UI redraws over the image | Experiment with `STOP_FRAMEWORK=1` and `FRAMEWORK_JOBS='framework lab126_gui'`. Job names and stopping effects need device verification. Start with a debug flag and SSH available. |
-| Tools installed elsewhere | Override `LIPC_SET_BIN`, `LIPC_GET_BIN`, `GASGAUGE_BIN`, `EIPS_BIN`, `START_BIN`, `STOP_BIN`, `SLEEP_BIN`, `DATE_BIN`, `KILL_BIN`. Each is one command/path, without arguments. Device actions pass through wrapper functions. |
-| Runtime paths / lock troubleshooting | `STATE_DIR`, `PIDFILE`, `TEMP_DIR`, `IMAGE_FILE`, `FRAMEWORK_MARKER`, `PROC_ROOT`, `DEBUG_FILE`, `STOP_FILE`, `LOG_FILE`, `LOG_MAX_BYTES`. Keep download temp/cache on the same filesystem for atomic moves. If a launch died during stale recovery and left `.reap`, verify no dashboard/selftest is running before removing that directory. Never delete a live singleton lock. |
+| `startup refused: configure HTTPS BASE_URL, TOKEN and HTTP client` | Config values, curl discovery, readable CA bundle; use Self-test. |
+| `startup refused: another instance or lock recovery in progress` | Tap Stop, then retry Start. Do not remove a live lock. |
+| `startup refused: powerd screensaver mode requires STOP_FRAMEWORK=0` | Set `STOP_FRAMEWORK=0`. |
+| `auto screensaver not confirmed; no further button presses; waiting for user/idle` | Inspect exact `powerd snapshot` state/status; manually enter screensaver once. |
+| `active: scheduled fetching paused; power button remains under user control` | Expected while using the stock UI, even in awake mode; return to screensaver. |
+| `unknown powerd state: scheduled fetching paused` | Inspect state/status output and return codes; do not infer state from other status fields. |
+| `rtcWakeup arm target=` and `powerd set property=rtcWakeup` | Check remaining/mode/int and setter rc/output. Test an unplugged timed wake; a successful write alone is insufficient. |
+| `rtcWakeup failed: timeout/poll fallback only while CPU runs; timed wake unconfirmed` | Check ready state and LIPC output; ordinary polling cannot wake a suspended CPU. |
+| `lipc-wait-event missing: polling state every` | Check self-test tool discovery; polling may miss the ready window. |
+| `cycle skipped: suspend guard failed` / `deferSuspend left screensaver; cycle refused` | Inspect abort/defer setter diagnostics and transitions; retain defer mode none. Firmware behavior needs validation. |
+| `early wake: fetch skipped` | Expected before target; inspect clock/target and later due event. |
+| `awake mode: abortSuspend hold rc=` | Confirm zero and unchanged locked state when testing the debug flag. A failed hold can permit suspend; RTC safety arming is attempted separately. |
+| `inferred wake: wait_elapsed=` | Empty wait exceeded its expected wall time; save diagnostics, and distinguish suspend from a clock change. |
+| `wake dmesg rc=` | Save undefined-instruction, ar6003, suspend and PM lines with nearby power/event logs. |
+| `wifi connection timeout elapsed=` | Check saved network and `wifi state=[...]`; adjust Wi-Fi/resume budgets if needed. |
+| `fetch failed client_exit=` / `fetch rejected http=` | Check Self-test time/CA/TLS and authenticated Refresh once. Common curl exits: 6 DNS, 7 connection, 28 timeout, 35 TLS, 60 certificate. |
+| Stock image/icon overwrites dashboard | Inspect `repaint reason=` and delays; keep framework running. |
+| `frontlight restore failed; saved file retained for Stop retry` | Tap Stop again and inspect setter output; retain `frontlight.saved`. |
 
-Keep the frontlight off using the stock UI when measuring battery use. Battery
-life depends on its age, Wi-Fi association time, interval, full-refresh frequency,
-and whether suspend truly works. No weeks/months claim is validated here. Measure
-unplugged discharge over a day or more and inspect logs for unexpectedly short
-suspends. Awake/debug/USB mode and plain-sleep fallbacks consume more energy than
-working suspend. The low-battery cutoff reduces activity; it is not a hardware
-shutdown or battery-protection guarantee.
+PW3 USB-power detection assumes
+`/sys/devices/system/wario_charger/wario_charger0/connected`; charging has a
+separate fallback node. Confirm Self-test while powered, including at full battery.
+Display assumes 1072×1448 and eips status row 59 when row discovery fails. FBInk
+is optional and falls back to eips; verify partial/full output and status text
+on the actual device. No RTC device path is needed for normal operation.
+Battery age, light, association time and actual suspend dominate consumption;
+no weeks/months battery-life claim is validated. Measure unplugged discharge.
 
-Autostart can be added later using a firmware-appropriate startup hook that calls
-`sh /mnt/us/extensions/kindle-ha-dash/bin/start.sh` after user storage and LIPC
-are ready. First verify recovery, debug/stop flags and several unplugged RTC
-cycles. This package deliberately installs no such hook.
-
-## Host verification
-
-Run from the repository root:
+## Host verification and sources
 
 ```sh
 sh kindle/tests/run.sh
@@ -182,27 +226,29 @@ find kindle -name '*.sh' -exec sh -n {} \;
 shellcheck -s sh kindle/install.sh kindle/extensions/kindle-ha-dash/bin/*.sh kindle/tests/run.sh
 ```
 
-Tests use only temporary fixtures and fake device/HTTP commands; they never
-contact a Kindle or HTTP server. They cover header parsing, bounds, magic bytes,
-failed-fetch preservation, singleton behavior, low battery, awake overrides and
-RTC/suspend fallbacks. Passing host tests does not validate the PW3 kernel,
-LIPC properties, USB detection, Upstart jobs or e-ink output.
+Host tests use temporary fixtures and fake commands, with no Kindle/server
+contact. They exercise parsing, fetch preservation, locking, power states,
+events and bounded guards. They do not establish PW3 firmware behavior, actual
+RTC wake, Wi-Fi recovery, light-off or display correctness.
 
-Technique references: [KOReader KUAL descriptor](https://github.com/koreader/koreader/blob/master/platform/kindle/extensions/koreader/config.xml),
-[FBInk CLI](https://github.com/NiLuJe/FBInk/blob/master/CLI.md),
-[KOReader PW3 hardware configuration](https://github.com/koreader/koreader/blob/master/frontend/device/kindle/device.lua),
-and the author's [Wario USB-power sysfs example](https://www.mobileread.com/forums/showthread.php?t=347934).
-The client is original shell code; nothing from these projects is vendored.
+Primary implementation references:
 
-## Installing without KUAL (scriptlets, WinterBreak2 and other modern jailbreaks)
+- [Online Screensaver scheduler](https://github.com/alextrical/KindleOnlineScreensaver/blob/main/bin/scheduler.sh),
+  [update](https://github.com/alextrical/KindleOnlineScreensaver/blob/main/bin/update.sh)
+  and [event/RTC helpers](https://github.com/alextrical/KindleOnlineScreensaver/blob/main/bin/utils.sh)
+  show locked image updates, Wi-Fi handling and ready-window scheduling. Its
+  large defer values are not a bounded guard recipe for this firmware.
+- [KOReader Kindle power handling](https://github.com/koreader/koreader/blob/master/frontend/device/kindle/powerd.lua)
+  establishes relative RTC seconds, ready-only programming, state checks after
+  wake, and the PW3 light-zero caveat. [Its event reader](https://github.com/koreader/koreader-base/blob/master/input/input-kindle.h)
+  shows `-m -s 0` for an indefinite stream and event names followed by arguments.
+  This client's timed single-event waits also poll state.
+- [KindleCron abort guard](https://github.com/lennardollesch/KindleCron/blob/main/kron/keepawake.go)
+  and [scheduler](https://github.com/lennardollesch/KindleCron/blob/main/kron/daemon.go)
+  support the finite abortSuspend approach. The project reports KT4/PW4 tests;
+  applying this behavior to PW3 5.16.2.1.1 remains an inference to verify.
+- [kindle-dash Paperwhite issue #25](https://github.com/pascalw/kindle-dash/issues/25)
+  demonstrates missing framework/RTC paths on a reported PW3. Kindle 4 raw
+  suspend assumptions are not portable evidence for this target.
 
-Modern jailbreaks replace KUAL with *scriptlets*: `.sh` files in the Kindle's
-`documents` folder that show up in the library and run as root when tapped.
-
-1. Connect the Kindle over USB and run `kindle/install-usb.sh /Volumes/Kindle`.
-2. Edit `extensions/kindle-ha-dash/config.sh` on the Kindle (`BASE_URL`, `TOKEN`).
-3. Eject. The library now has **Dashboard: Start**, **Stop**, **Refresh once**
-   and **Self-test** (which writes `kindle-ha-dash-selftest.txt` to the Kindle's
-   storage, readable over USB).
-
-No SSH is required; logs and the self-test report are read over USB.
+The client is original shell code; no source from these projects is vendored.

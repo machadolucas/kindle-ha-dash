@@ -2,13 +2,15 @@
 EXT_DIR=$(CDPATH= cd -P "$(dirname "$0")/.." && pwd) || exit 1
 # shellcheck source=kindle/extensions/kindle-ha-dash/bin/lib.sh
 . "$EXT_DIR/bin/lib.sh"
-khd_init "$EXT_DIR" || exit 1
+khd_init "$EXT_DIR" || { printf '%s\n' 'launch refused: invalid configuration; run Self-test for the setting name' >> "$EXT_DIR/dashboard.log"; exit 1; }
 case ${1:---loop} in --loop|--once) khd_mode=${1:---loop} ;; *) echo 'Usage: sh start.sh [--loop|--once]' >&2; exit 1 ;; esac
 if khd_find_pid >/dev/null; then
+    khd_log 'launch refused: dashboard already running; Stop before Refresh once'
     echo 'Dashboard is already running. Stop it before Refresh once.'
     exit 1
 fi
 if ! khd_validate_server; then
+    khd_log 'startup refused: configure HTTPS BASE_URL, TOKEN and HTTP client'
     echo 'Configure BASE_URL, TOKEN and a working curl client in config.sh first.' >&2
     exit 1
 fi

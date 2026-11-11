@@ -1,0 +1,153 @@
+== tools
+wpa_cli: /usr/bin/wpa_cli
+ifconfig: ifconfig
+iwconfig: /usr/sbin/iwconfig
+powerd_test: /usr/bin/powerd_test
+	rw 	Has	certificateData
+	w	Str	deleteCertificate
+	r	Str	signalStrength
+	rw	Has	cmIntfInfo
+	rw	Int	enable
+	w	Int	hotSpotDBDownloadStatus
+	r	Str	711
+	r	Str	macSecret
+	w	Str	cmConnect
+	w	Str	cmCheckConnection
+	rw	Has	connMetadata
+	r	Int	cmIntfInUse
+	r	Str	manufacturerCode
+	rw	Has	installCertificate
+	w	Str	setRegDomCC
+	r	Str	macAddress
+	rw	Has	profileData
+	rw	Has	netConfig
+	w	Str	cmDisconnect
+	rw	Str	logMask
+	rw	Str	logLevel
+	r	Int	scanListCount
+	rw	Has	cmNWProperties
+	rw	Has	createProfile
+	r	Str	scanState
+	w	Str	cmConnMode
+	r	Str	feelingLuckyProfile
+	w	Str	deleteProfile
+	rw	Has	currentEssid
+	r	Str	cmState
+	rw	Has	createNetConfig
+	w	Str	scan
+	rw	Has	scanList
+	r	Int	profileCount
+	w	Int	resetSavePasswordPreference
+	r 	Str	state
+	w	Int	powerButton
+	r	Str	status
+	w	Int	touchScreenSaverTimeout
+	w	Int	deviceRestart
+	r	Int	flTurboBrightnessIntensity
+	w	Int	abortSuspend
+	w	Int	rtcWakeup
+	r	Int	flMaxIntensity
+	rw	Int	disableScreenOff
+	r	Str	battStateInfo
+	rw	Int	flAuto
+	w	Int	deferRestart
+	w	Str	rtcWakeup2
+	w	Int	flStartup
+	w	Int	addSuspendLevels
+	w	Str	restartAlertResponse
+	rw	Str	logMask
+	rw	Str	logLevel
+	w	Int	deferSuspend
+	w	Int	suspendGrace
+	r	Int	isLowTempState
+	r	Int	isCharging
+	r	Int	battTemperature
+	r	Int	battLevel
+	rw	Int	preventScreenSaver
+	w	Int	wakeUp
+	r	Int	flRawIntensity
+	w	Int	sendPendingResume
+	w	Str	shutdownAlertResponse
+	rw	Int	flIntensity
+[16:07:53] start: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+== test 1: wifi off/on, no suspend
+[16:07:58] after off: cm=NA wirelessEnable=0 powerd=active fl=12
+    wpa: 
+    wlan0: 
+[16:09:01] not connected after 60 s
+[16:09:01] after on: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+== test 2: suspend with wifi ON, then just wait
+[16:09:02] suspending 60 s
+[16:10:04] resumed
+[16:10:08] after resume: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+[16:11:11] not connected after 60 s
+[16:11:11] after wait: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+== test 3: wifi off, suspend, wifi on, wait; then recovery attempts
+[16:11:16] suspending 60 s
+[16:12:17] resumed
+[16:12:21] after resume: cm=NA wirelessEnable=0 powerd=active fl=12
+    wpa: 
+    wlan0: 
+[16:13:10] not connected after 45 s
+[16:13:10] before recovery: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+-- recovery A: wpa_cli reconnect
+Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory
+[16:13:41] not connected after 30 s
+-- recovery B: wpa_cli reassociate + scan
+Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory
+Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory
+[16:14:16] not connected after 30 s
+-- recovery C: restart wifid
+wifid stop/waiting
+wifid start/running, process 18005
+[16:15:06] not connected after 45 s
+-- recovery D: wake powerd (wakeUp)
+com.lab126.powerd failed to set value for property wakeUp (0x8 lipcErrNoSuchProperty)
+[16:15:54] not connected after 45 s
+[16:15:54] end: cm=NA wirelessEnable=1 powerd=active fl=12
+    wpa: 
+    wlan0: 
+== dmesg tail
+[ 5025.613565] wifid (18235): undefined instruction: pc=404ae228
+[ 5025.613574] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5027.325712] devcap-get-feat (18367): undefined instruction: pc=40455228
+[ 5027.325723] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5027.334118] get-dynconf-val (18368): undefined instruction: pc=404bf228
+[ 5027.334128] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5038.937439] cfg80211: Calling CRDA to update world regulatory domain
+[ 5038.937495] cfg80211: World regulatory domain updated:
+[ 5038.955983] wifi_card_enable: device power already on!
+[ 5038.961128] ar6003 driver could not enable wifi chip
+[ 5039.123403] wifid (18856): undefined instruction: pc=4043d228
+[ 5039.123412] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5052.436997] cfg80211: Calling CRDA to update world regulatory domain
+[ 5052.437055] cfg80211: World regulatory domain updated:
+[ 5052.455542] wifi_card_enable: device power already on!
+[ 5052.460688] ar6003 driver could not enable wifi chip
+[ 5052.623353] wifid (18933): undefined instruction: pc=40477228
+[ 5052.623363] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5065.908056] cfg80211: Calling CRDA to update world regulatory domain
+[ 5065.908116] cfg80211: World regulatory domain updated:
+[ 5065.930886] wifi_card_enable: device power already on!
+[ 5065.936645] ar6003 driver could not enable wifi chip
+[ 5066.097880] wifid (19006): undefined instruction: pc=403e3228
+[ 5066.097889] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+[ 5079.328071] cfg80211: Calling CRDA to update world regulatory domain
+[ 5079.328128] cfg80211: World regulatory domain updated:
+[ 5079.346587] wifi_card_enable: device power already on!
+[ 5079.351732] ar6003 driver could not enable wifi chip
+[ 5079.514461] wifid (19083): undefined instruction: pc=4047c228
+[ 5079.514470] Code: e320f000 e320f000 f2200150 e12fff1e (ec510f1e) 
+== done 16:15:54
+update_to_display: update_mode=PARTIAL, wave_mode=257 inverted=0
+swipe feature is not supported in this platfom G1

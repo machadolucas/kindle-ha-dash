@@ -43,10 +43,25 @@ EOF
 cat >"$TEST_TMP/bin/lipc-set-prop" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FAKE_LIPC_SET_LOG"
+[ "${1-}" != -i ] || shift
+[ "${2-}" != "${FAKE_FAIL_PROPERTY:-}" ] || exit 17
+case ${2-} in
+    flIntensity) printf '%s\n' "${3-}" >"$FAKE_FRONTLIGHT_FILE" ;;
+    deferSuspend)
+        [ "${FAKE_DEFER_ACTIVE:-0}" != 1 ] || printf 'active\n' >"$FAKE_POWER_STATE_FILE"
+        ;;
+    powerButton)
+        [ "${FAKE_POWER_BUTTON_RC:-0}" -eq 0 ] || exit "$FAKE_POWER_BUTTON_RC"
+        [ -z "${FAKE_POWER_STATE_FILE:-}" ] || printf 'screenSaver\n' >"$FAKE_POWER_STATE_FILE"
+        ;;
+esac
 EOF
 cat >"$TEST_TMP/bin/lipc-get-prop" <<'EOF'
 #!/bin/sh
 case ${2-} in
+    state) [ -z "${FAKE_POWER_STATE_FILE:-}" ] || cat "$FAKE_POWER_STATE_FILE" ;;
+    status) printf '%s\n' "${FAKE_POWER_STATUS:-Screen Saver}" ;;
+    flIntensity) cat "$FAKE_FRONTLIGHT_FILE" ;;
     isCharging) printf '%s\n' "${FAKE_CHARGING:-0}" ;;
     cmState)
         if [ -n "${FAKE_WIFI_STATE_SEQUENCE:-}" ]; then
@@ -76,6 +91,43 @@ cat >"$TEST_TMP/bin/sleep" <<'EOF'
 printf '%s\n' "$*" >>"$FAKE_SLEEP_LOG"
 if [ -n "${FAKE_SLEEP_EVENT_FILE:-}" ]; then printf 'sleep:%s\n' "$1" >>"$FAKE_SLEEP_EVENT_FILE"; fi
 if [ -n "${FAKE_SLEEP_WAKE_FILE:-}" ]; then : >"$FAKE_SLEEP_WAKE_FILE"; fi
+if [ -n "${FAKE_SLEEP_POWER_STATE:-}" ]; then printf '%s\n' "$FAKE_SLEEP_POWER_STATE" >"$FAKE_POWER_STATE_FILE"; fi
+if [ "${FAKE_SLEEP_ADVANCE:-0}" = 1 ]; then
+    clock=$(cat "$FAKE_CLOCK_FILE")
+    advance=${FAKE_SLEEP_ADVANCE_VALUE:-$1}
+    printf '%s\n' "$((clock + advance))" >"$FAKE_CLOCK_FILE"
+fi
+EOF
+cat >"$TEST_TMP/bin/lipc-wait-event" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$FAKE_EVENT_LOG"
+if [ -n "${FAKE_EVENT_CLOCK:-}" ]; then printf '%s\n' "$FAKE_EVENT_CLOCK" >"$FAKE_CLOCK_FILE"; fi
+printf '%s\n' "${FAKE_EVENT_TEXT:-}"
+exit "${FAKE_EVENT_RC:-0}"
+EOF
+cat >"$TEST_TMP/bin/powerd_test" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$FAKE_POWERD_LOG"
+case ${1-} in
+    -s) printf '%s\n' "${FAKE_POWER_STATUS:-Screen Saver}" ;;
+    -p) printf 'screenSaver\n' >"$FAKE_POWER_STATE_FILE" ;;
+esac
+EOF
+cat >"$TEST_TMP/bin/guard-sleep" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$$" >>"$FAKE_GUARD_SLEEP_PIDS"
+exec /bin/sleep "$@"
+EOF
+cat >"$TEST_TMP/bin/date" <<'EOF'
+#!/bin/sh
+case ${1-} in
+    +%s) cat "$FAKE_CLOCK_FILE" ;;
+    *) printf '2026-11-11T12:00:00+0000\n' ;;
+esac
+EOF
+cat >"$TEST_TMP/bin/dmesg" <<'EOF'
+#!/bin/sh
+printf 'PM: simulated powerd wake diagnostic\n'
 EOF
 chmod +x "$TEST_TMP/bin/"*
 
@@ -83,6 +135,13 @@ export PATH="$TEST_TMP/bin:$PATH"
 export FAKE_CURL_LOG="$TEST_TMP/curl.log" FAKE_EIPS_LOG="$TEST_TMP/eips.log"
 export FAKE_LIPC_SET_LOG="$TEST_TMP/lipc-set.log"
 export FAKE_SLEEP_LOG="$TEST_TMP/sleep.log"
+export FAKE_FRONTLIGHT_FILE="$TEST_TMP/frontlight"
+export FAKE_POWER_STATE_FILE="$TEST_TMP/power-state"
+export FAKE_EVENT_LOG="$TEST_TMP/event.log" FAKE_POWERD_LOG="$TEST_TMP/powerd.log"
+export FAKE_CLOCK_FILE="$TEST_TMP/clock"
+printf '100\n' >"$FAKE_CLOCK_FILE"
+printf 'screenSaver\n' >"$FAKE_POWER_STATE_FILE"
+printf '12\n' >"$FAKE_FRONTLIGHT_FILE"
 export FAKE_HEADERS="$TEST_TMP/headers" FAKE_BODY="$TEST_TMP/body"
 export FAKE_LIVE_PID="$$"
 
@@ -128,89 +187,7 @@ check() {
         printf 'FAIL: %s (expected <%s>, got <%s>)\n' "$label" "$3" "$2" >&2
     fi
 }
-run_suspend_case() {
-    suspend_case=$1
-    (
-        RTC_DEVICE="$TEST_TMP/rtc-$suspend_case"
-        POWER_STATE_PATH="$TEST_TMP/power-$suspend_case"
-        DEBUG_FILE="$TEST_TMP/debug-$suspend_case"
-        LOG_FILE="$TEST_TMP/suspend-$suspend_case.log"
-        EVENT_FILE="$TEST_TMP/events-$suspend_case"
-        mkdir -p "$RTC_DEVICE"
-        : >"$RTC_DEVICE/wakealarm"
-        KHD_WIFI_OFF=1
-        KHD_BATTERY=50
-        KHD_CHARGING=0
-        KHD_USB_POWERED=0
-        AWAKE_INTERVAL_SECONDS=4
-        RESUME_DELAY_SECONDS=1
-        SIM_ALARM=0
-        SIM_READ_BAD=0
-        SIM_MEM_RC=0
-        SIM_READ_COUNT=0
-        case $suspend_case in
-            wifi_off_failure) : ;;
-            alarm_readback_failure) SIM_READ_BAD=1 ;;
-            mem_failure) SIM_MEM_RC=1 ;;
-            debug_awake) : >"$DEBUG_FILE" ;;
-            usb_awake) KHD_BATTERY=100; KHD_USB_POWERED=1 ;;
-            debug_after_alarm) : ;;
-            wake_during_fallback)
-                SIM_READ_BAD=1
-                FAKE_SLEEP_WAKE_FILE="$TEST_TMP/wake-during-fallback"
-                FAKE_SLEEP_EVENT_FILE="$TEST_TMP/events-$suspend_case"
-                export FAKE_SLEEP_WAKE_FILE FAKE_SLEEP_EVENT_FILE
-                ;;
-        esac
-        khd_log() { :; }
-        khd_clock() { printf '%s\n' 100; }
-        khd_now() { printf '%s\n' 100; }
-        khd_read_battery() {
-            SIM_READ_COUNT=$((SIM_READ_COUNT + 1))
-            case $suspend_case in
-                usb_awake) KHD_BATTERY=100; KHD_CHARGING=0; KHD_USB_POWERED=1 ;;
-                wake_during_fallback)
-                    KHD_BATTERY=50; KHD_CHARGING=0
-                    if [ -e "$FAKE_SLEEP_WAKE_FILE" ]; then KHD_USB_POWERED=1; else KHD_USB_POWERED=0; fi
-                    ;;
-                debug_after_alarm)
-                    KHD_BATTERY=50; KHD_CHARGING=0; KHD_USB_POWERED=0
-                    [ "$SIM_READ_COUNT" -lt 2 ] || : >"$DEBUG_FILE"
-                    ;;
-                *) KHD_BATTERY=50; KHD_CHARGING=0; KHD_USB_POWERED=0 ;;
-            esac
-        }
-        khd_stop_requested() { return 1; }
-        if [ "$suspend_case" != wake_during_fallback ]; then
-            khd_pause() { printf 'pause:%s\n' "$1" >>"$EVENT_FILE"; }
-        fi
-        khd_sleep() {
-            printf 'sleep:%s\n' "$1" >>"$EVENT_FILE"
-            if [ -n "${FAKE_SLEEP_WAKE_FILE:-}" ]; then : >"$FAKE_SLEEP_WAKE_FILE"; fi
-        }
-        khd_wifi_set() {
-            printf 'wifi:%s\n' "$1" >>"$EVENT_FILE"
-            if [ "$suspend_case" = wifi_off_failure ] && [ "$1" = 0 ]; then
-                KHD_WIFI_OFF=0
-                return 1
-            fi
-            if [ "$1" = 0 ]; then KHD_WIFI_OFF=1; else KHD_WIFI_OFF=0; fi
-            return 0
-        }
-        khd_write_node() {
-            printf 'write:%s:%s\n' "$1" "$2" >>"$EVENT_FILE"
-            if [ "$1" = "$RTC_DEVICE/wakealarm" ]; then SIM_ALARM=$2; fi
-            if [ "$1" = "$POWER_STATE_PATH" ]; then return "$SIM_MEM_RC"; fi
-            return 0
-        }
-        khd_read_node() {
-            printf 'read:%s\n' "$1" >>"$EVENT_FILE"
-            if [ "$SIM_READ_BAD" = 1 ]; then printf '%s\n' wrong; else printf '%s\n' "$SIM_ALARM"; fi
-        }
-        khd_sleep_cycle 10
-    ) >"$TEST_TMP/suspend-$1.out" 2>&1
-}
-has_event() { grep -F "$2" "$1" >/dev/null 2>&1; }
+has_event() { grep -F -- "$2" "$1" >/dev/null 2>&1; }
 
 printf 'HTTP/1.1 302 Found\r\nx-sleep-seconds: 12\r\nx-full-refresh: 1\r\nHTTP/2 200\r\ncontent-type: image/png\r\nx-sleep-seconds: 00045\r\nx-full-refresh: invalid\r\n\r\n' >"$FAKE_HEADERS"
 khd_parse_headers "$FAKE_HEADERS"
@@ -390,67 +367,331 @@ check 'log rotation writes fresh log' "$a" 1
 LOG_FILE=$saved_log
 LOG_MAX_BYTES=$saved_log_max
 
-# RTC and suspend paths are fully simulated by shell function overrides.
-run_suspend_case rtc_suspend
-events="$TEST_TMP/events-rtc_suspend"
-if has_event "$events" "write:$TEST_TMP/rtc-rtc_suspend/wakealarm:0" &&
-   has_event "$events" "write:$TEST_TMP/rtc-rtc_suspend/wakealarm:110" &&
-   has_event "$events" "read:$TEST_TMP/rtc-rtc_suspend/wakealarm" &&
-   has_event "$events" "write:$TEST_TMP/power-rtc_suspend:mem"; then a=1; else a=0; fi
-check 'RTC arm precedes separate mem request' "$a" 1
-mem_line=$(grep -n -F "write:$TEST_TMP/power-rtc_suspend:mem" "$events" | sed -n '1s/:.*//p')
-readback_line=$(grep -n -F "read:$TEST_TMP/rtc-rtc_suspend/wakealarm" "$events" | sed -n '1s/:.*//p')
-if [ -n "$mem_line" ] && [ -n "$readback_line" ] && [ "$mem_line" -gt "$readback_line" ]; then a=1; else a=0; fi
-check 'mem request follows alarm readback' "$a" 1
-if has_event "$events" 'pause:10'; then a=1; else a=0; fi
-check 'immediate suspend return sleeps remaining interval' "$a" 1
+# Powerd owns suspend. A deterministic wall clock and stub event source let
+# these cases exercise the real deadline, state and event functions off-device.
+run_power_case() {
+    power_case=$1
+    (
+        case_dir="$TEST_TMP/powerd-$power_case"
+        mkdir -p "$case_dir/ext/bin" "$case_dir/state/work"
+        EXT_DIR="$case_dir/ext"
+        STATE_DIR="$case_dir/state"
+        TEMP_DIR="$STATE_DIR/work"
+        IMAGE_FILE="$STATE_DIR/image.png"
+        PIDFILE="$STATE_DIR/dash.pid"
+        LOG_FILE="$case_dir/client.log"
+        STOP_FILE="$case_dir/stop"
+        DEBUG_FILE="$case_dir/debug"
+        FRAMEWORK_MARKER="$STATE_DIR/framework-stopped"
+        FRONTLIGHT_STATE_FILE="$EXT_DIR/frontlight-state"
+        FAKE_CURL_LOG="$case_dir/curl.log"
+        FAKE_EIPS_LOG="$case_dir/eips.log"
+        FAKE_LIPC_SET_LOG="$case_dir/lipc-set.log"
+        FAKE_SLEEP_LOG="$case_dir/sleep.log"
+        FAKE_EVENT_LOG="$case_dir/events.log"
+        FAKE_POWERD_LOG="$case_dir/powerd.log"
+        FAKE_CLOCK_FILE="$case_dir/clock"
+        FAKE_FRONTLIGHT_FILE="$case_dir/frontlight"
+        FAKE_POWER_STATE_FILE="$case_dir/power-state"
+        export FAKE_CURL_LOG FAKE_EIPS_LOG FAKE_LIPC_SET_LOG FAKE_SLEEP_LOG
+        export FAKE_EVENT_LOG FAKE_POWERD_LOG FAKE_CLOCK_FILE FAKE_FRONTLIGHT_FILE FAKE_POWER_STATE_FILE
+        FAKE_GASGAUGE_OUTPUT='50%' FAKE_CHARGING=0 FAKE_WIFI_STATE=CONNECTED
+        export FAKE_GASGAUGE_OUTPUT FAKE_CHARGING FAKE_WIFI_STATE
+        printf '100\n' >"$FAKE_CLOCK_FILE"
+        printf 'screenSaver\n' >"$FAKE_POWER_STATE_FILE"
+        printf '12\n' >"$FAKE_FRONTLIGHT_FILE"
+        : >"$FAKE_CURL_LOG"; : >"$FAKE_EIPS_LOG"; : >"$FAKE_LIPC_SET_LOG"
+        : >"$FAKE_EVENT_LOG"; : >"$FAKE_POWERD_LOG"; : >"$FAKE_SLEEP_LOG"
+        cp "$TEST_TMP/png" "$IMAGE_FILE"
+        cp "$TEST_TMP/png" "$FAKE_BODY"
+        printf 'HTTP/1.1 200 OK\r\nx-sleep-seconds: 60\r\n\r\n' >"$FAKE_HEADERS"
+        LIPC_WAIT_BIN="$TEST_TMP/bin/lipc-wait-event"
+        POWERD_TEST_BIN="$TEST_TMP/bin/powerd_test"
+        DMESG_BIN="$TEST_TMP/bin/dmesg"
+        DATE_BIN="$TEST_TMP/bin/date"
+        MIN_SLEEP_SECONDS=10 MAX_SLEEP_SECONDS=300 FALLBACK_SLEEP_SECONDS=60
+        WIFI_OFF_REDRAW_DELAY_SECONDS=0 RESUME_DELAY_SECONDS=0
+        POLL_INTERVAL_SECONDS=5 WAKE_TOLERANCE_SECONDS=2
+        AUTO_SCREENSAVER=1 STOP_FRAMEWORK=0 CYCLE_ABORT_SUSPEND=0
+        SCREENSAVER_REDRAW_DELAY_SECONDS=0
+        KHD_LAST_POWER_CLASS=screensaver
+        KHD_MODE=--loop KHD_INITIAL_CYCLE=0 KHD_POWER_CLASS=screensaver
+        KHD_POWER_PHASE=screensaver KHD_TARGET_EPOCH=180 KHD_WIFI_OFF=1
+        case $power_case in
+            ready_remaining)
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                printf '110\n' >"$FAKE_CLOCK_FILE"
+                khd_handle_event 'readyToSuspend 1'
+                ;;
+            ready_clamped)
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                KHD_TARGET_EPOCH=105
+                printf '110\n' >"$FAKE_CLOCK_FILE"
+                khd_handle_event 'readyToSuspend 1'
+                ;;
+            debug_ready)
+                : >"$DEBUG_FILE"
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                khd_handle_event 'readyToSuspend 1'
+                ;;
+            wifi_active_switch)
+                FAKE_WIFI_STATE=DISCONNECTED FAKE_SLEEP_POWER_STATE=active
+                export FAKE_WIFI_STATE FAKE_SLEEP_POWER_STATE
+                WIFI_TIMEOUT_SECONDS=1 WIFI_RETRIES=1
+                khd_run_cycle
+                ;;
+            rapid_unknown_events)
+                FAKE_EVENT_RC=2 FAKE_EVENT_TEXT='unknownEvent 9'
+                export FAKE_EVENT_RC FAKE_EVENT_TEXT
+                khd_loop_turn
+                khd_loop_turn
+                khd_loop_turn
+                ;;
+            poll_inferred_wake)
+                KHD_TARGET_EPOCH=150
+                LIPC_WAIT_BIN="$case_dir/missing-event-tool"
+                FAKE_SLEEP_ADVANCE=1 FAKE_SLEEP_ADVANCE_VALUE=60
+                export FAKE_SLEEP_ADVANCE FAKE_SLEEP_ADVANCE_VALUE
+                khd_loop_turn
+                ;;
+            auto_entry_disabled)
+                AUTO_SCREENSAVER=0 KHD_POWER_CLASS=active
+                printf 'active\n' >"$FAKE_POWER_STATE_FILE"
+                khd_enter_screensaver
+                ;;
+            early_wake) khd_handle_event 'wakeupFromSuspend 1' ;;
+            due_wake)
+                KHD_TARGET_EPOCH=100
+                khd_handle_event 'resuming 1'
+                ;;
+            tolerance_wake)
+                KHD_TARGET_EPOCH=102
+                khd_handle_event 'wakeupFromSuspend 1'
+                ;;
+            timeout)
+                KHD_TARGET_EPOCH=105
+                FAKE_EVENT_RC=1 FAKE_EVENT_TEXT= FAKE_EVENT_CLOCK=105
+                export FAKE_EVENT_RC FAKE_EVENT_TEXT FAKE_EVENT_CLOCK
+                khd_loop_turn
+                ;;
+            active_pause)
+                KHD_TARGET_EPOCH=90
+                printf 'active\n' >"$FAKE_POWER_STATE_FILE"
+                khd_observe_power test-active
+                khd_run_due 0
+                printf '%s\n' "$(wc -l <"$FAKE_CURL_LOG" | tr -d ' ')" >"$case_dir/active-fetches"
+                : >"$FAKE_EIPS_LOG"
+                printf 'screenSaver\n' >"$FAKE_POWER_STATE_FILE"
+                khd_observe_power test-return
+                cp "$FAKE_EIPS_LOG" "$case_dir/return-repaint"
+                khd_run_due 0
+                ;;
+            guard_lifecycle)
+                KHD_POWER_PHASE=ready CYCLE_ABORT_SUSPEND=1
+                KILL_BIN=/bin/kill
+                SLEEP_BIN="$TEST_TMP/bin/guard-sleep"
+                FAKE_GUARD_SLEEP_PIDS="$case_dir/sleep-pids"
+                export FAKE_GUARD_SLEEP_PIDS
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                khd_guard_start
+                saved_guard_pid=$KHD_GUARD_PID
+                /bin/sleep 6
+                khd_guard_stop
+                if /bin/kill -0 "$saved_guard_pid" 2>/dev/null; then printf 'live\n'; else printf 'stopped\n'; fi >"$case_dir/guard-state"
+                sleep_live=0
+                while IFS= read -r sleep_pid; do
+                    if /bin/kill -0 "$sleep_pid" 2>/dev/null; then
+                        sleep_live=$((sleep_live + 1))
+                        ps -o pid=,ppid=,stat=,command= -p "$sleep_pid" >>"$case_dir/live-processes" 2>/dev/null || :
+                    fi
+                done <"$FAKE_GUARD_SLEEP_PIDS"
+                printf '%s\n' "$sleep_live" >"$case_dir/live-sleeps"
+                ;;
+            defer_leaves_active)
+                KHD_TARGET_EPOCH=90 KHD_POWER_PHASE=ready SUSPEND_DEFER_MODE=deferSuspend
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                FAKE_DEFER_ACTIVE=1
+                export FAKE_DEFER_ACTIVE
+                khd_run_due 0
+                ;;
+            guard_failure)
+                KHD_TARGET_EPOCH=90 KHD_POWER_PHASE=ready CYCLE_ABORT_SUSPEND=1
+                printf 'readyToSuspend\n' >"$FAKE_POWER_STATE_FILE"
+                FAKE_FAIL_PROPERTY=abortSuspend
+                export FAKE_FAIL_PROPERTY
+                khd_run_due 0
+                ;;
+            unknown_pause)
+                KHD_TARGET_EPOCH=90
+                printf 'unrecognized-state\n' >"$FAKE_POWER_STATE_FILE"
+                FAKE_POWER_STATUS='unrecognized status'
+                export FAKE_POWER_STATUS
+                khd_observe_power test-unknown
+                khd_run_due 0
+                ;;
+            polling)
+                KHD_TARGET_EPOCH=105
+                LIPC_WAIT_BIN="$case_dir/missing-event-tool"
+                FAKE_SLEEP_ADVANCE=1
+                export FAKE_SLEEP_ADVANCE
+                khd_loop_turn
+                ;;
+            frontlight)
+                khd_frontlight_start
+                cp "$FRONTLIGHT_STATE_FILE" "$case_dir/saved-first"
+                khd_frontlight_start
+                cp "$FRONTLIGHT_STATE_FILE" "$case_dir/saved-second"
+                cp "$FAKE_FRONTLIGHT_FILE" "$case_dir/during"
+                khd_frontlight_restore
+                ;;
+            prepare_ui)
+                khd_prepare_ui
+                ;;
+            screen_entry)
+                printf 'active\n' >"$FAKE_POWER_STATE_FILE"
+                KHD_POWER_CLASS=active
+                FAKE_POWER_BUTTON_RC=1
+                export FAKE_POWER_BUTTON_RC
+                khd_enter_screensaver
+                ;;
+            stop|once)
+                cp "$LIB" "$EXT_DIR/bin/lib.sh"
+                cp "$SCRIPT_DIR/../extensions/kindle-ha-dash/bin/stop.sh" "$EXT_DIR/bin/stop.sh"
+                cp "$SCRIPT_DIR/../extensions/kindle-ha-dash/bin/dash.sh" "$EXT_DIR/bin/dash.sh"
+                # Config is an actual trusted shell file, just as on the Kindle.
+                for name in STATE_DIR TEMP_DIR IMAGE_FILE PIDFILE LOG_FILE STOP_FILE DEBUG_FILE FRAMEWORK_MARKER FRONTLIGHT_STATE_FILE PROC_ROOT LIPC_SET_BIN LIPC_GET_BIN LIPC_WAIT_BIN POWERD_TEST_BIN DMESG_BIN DATE_BIN SLEEP_BIN KILL_BIN GASGAUGE_BIN EIPS_BIN HTTP_CLIENT_BIN USB_POWER_PATH CHARGING_PATH; do
+                    eval 'value=${'"$name"'}'
+                    printf "%s='%s'\n" "$name" "$value" >>"$EXT_DIR/config.sh"
+                done
+                cat >>"$EXT_DIR/config.sh" <<'CONFIG'
+BASE_URL='https://example.invalid'
+TOKEN='test_token'
+FBINK_BIN=''
+STOP_FRAMEWORK=0
+WIFI_OFF_REDRAW_DELAY_SECONDS=0
+CONFIG
+                if [ "$power_case" = stop ]; then
+                    khd_frontlight_start
+                    /bin/sh "$EXT_DIR/bin/stop.sh" >"$case_dir/command.out" 2>&1
+                else
+                    printf 'active\n' >"$FAKE_POWER_STATE_FILE"
+                    /bin/sh "$EXT_DIR/bin/dash.sh" --once >"$case_dir/command.out" 2>&1
+                fi
+                printf '%s\n' "$?" >"$case_dir/command.rc"
+                ;;
+        esac
+        printf '%s\n' "${KHD_TARGET_EPOCH:-}" >"$case_dir/target"
+    ) >"$TEST_TMP/powerd-$1.out" 2>&1
+    power_rc=$?
+    check "$power_case fixture succeeds" "$power_rc" 0
+    if [ "$power_rc" -ne 0 ]; then cat "$TEST_TMP/powerd-$1.out" >&2; fi
+}
 
-run_suspend_case mem_failure
-events="$TEST_TMP/events-mem_failure"
-if has_event "$events" "write:$TEST_TMP/power-mem_failure:mem" && has_event "$events" 'pause:10'; then a=1; else a=0; fi
-check 'failed mem write sleeps remaining interval' "$a" 1
+run_power_case ready_remaining
+if has_event "$TEST_TMP/powerd-ready_remaining/lipc-set.log" 'rtcWakeup 70'; then a=1; else a=0; fi
+check 'readyToSuspend arms remaining deadline' "$a" 1
+if has_event "$TEST_TMP/powerd-ready_remaining/lipc-set.log" '-i com.lab126.powerd rtcWakeup 70'; then a=1; else a=0; fi
+check 'default rtcWakeup setter uses integer flag' "$a" 1
+if has_event "$TEST_TMP/powerd-ready_remaining/client.log" 'readyToSuspend 1'; then a=1; else a=0; fi
+check 'raw event payload is logged' "$a" 1
+run_power_case ready_clamped
+if has_event "$TEST_TMP/powerd-ready_clamped/lipc-set.log" 'rtcWakeup 10'; then a=1; else a=0; fi
+check 'past deadline wake timer clamps to minimum' "$a" 1
+run_power_case debug_ready
+if has_event "$TEST_TMP/powerd-debug_ready/lipc-set.log" 'rtcWakeup 80' && has_event "$TEST_TMP/powerd-debug_ready/lipc-set.log" 'abortSuspend 1'; then a=1; else a=0; fi
+check 'debug ready arms wake timer and holds pending suspend' "$a" 1
+rtc_line=$(grep -n 'rtcWakeup 80' "$TEST_TMP/powerd-debug_ready/lipc-set.log" | sed -n '1s/:.*//p')
+hold_line=$(grep -n 'abortSuspend 1' "$TEST_TMP/powerd-debug_ready/lipc-set.log" | sed -n '1s/:.*//p')
+if [ -n "$rtc_line" ] && [ -n "$hold_line" ] && [ "$rtc_line" -lt "$hold_line" ]; then a=1; else a=0; fi
+check 'debug ready arms safety timer before suspend hold' "$a" 1
+if has_event "$TEST_TMP/powerd-debug_ready/lipc-set.log" 'wirelessEnable 0'; then a=1; else a=0; fi
+check 'debug ready does not disable Wi-Fi' "$a" 0
 
-run_suspend_case alarm_readback_failure
-events="$TEST_TMP/events-alarm_readback_failure"
-if has_event "$events" 'pause:10' && has_event "$events" 'read:'; then a=1; else a=0; fi
-check 'alarm readback failure falls back to timed sleep' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'alarm readback failure avoids mem request' "$a" 0
+run_power_case wifi_active_switch
+check 'active switch during Wi-Fi wait prevents HTTP fetch' "$(wc -l <"$TEST_TMP/powerd-wifi_active_switch/curl.log" | tr -d ' ')" 0
+check 'active switch during Wi-Fi wait prevents display' "$(wc -l <"$TEST_TMP/powerd-wifi_active_switch/eips.log" | tr -d ' ')" 0
+if has_event "$TEST_TMP/powerd-wifi_active_switch/lipc-set.log" 'wirelessEnable 0'; then a=1; else a=0; fi
+check 'active switch prevents radio-off retry' "$a" 0
+run_power_case rapid_unknown_events
+check 'repeated immediate event exits each sleep one second' "$(cat "$TEST_TMP/powerd-rapid_unknown_events/sleep.log")" "$(printf '1\n1\n1')"
+check 'immediate unknown events still subscribe each turn' "$(wc -l <"$TEST_TMP/powerd-rapid_unknown_events/events.log" | tr -d ' ')" 3
+check 'immediate unknown events do not fetch early' "$(wc -l <"$TEST_TMP/powerd-rapid_unknown_events/curl.log" | tr -d ' ')" 0
+run_power_case poll_inferred_wake
+if has_event "$TEST_TMP/powerd-poll_inferred_wake/client.log" 'inferred wake: wait_elapsed=60' && has_event "$TEST_TMP/powerd-poll_inferred_wake/client.log" 'PM: simulated powerd wake diagnostic'; then a=1; else a=0; fi
+check 'long polling clock gap logs inferred wake and dmesg' "$a" 1
+check 'inferred polling wake fetches overdue image' "$(wc -l <"$TEST_TMP/powerd-poll_inferred_wake/curl.log" | tr -d ' ')" 1
 
-run_suspend_case wifi_off_failure
-events="$TEST_TMP/events-wifi_off_failure"
-if has_event "$events" 'pause:10'; then a=1; else a=0; fi
-check 'Wi-Fi off failure falls back to timed sleep' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'Wi-Fi off failure avoids mem request' "$a" 0
+run_power_case early_wake
+check 'early wake does not fetch' "$(wc -l <"$TEST_TMP/powerd-early_wake/curl.log" | tr -d ' ')" 0
+if [ -s "$TEST_TMP/powerd-early_wake/eips.log" ]; then a=1; else a=0; fi
+check 'early wake repaints cached image' "$a" 1
+if has_event "$TEST_TMP/powerd-early_wake/client.log" 'PM: simulated powerd wake diagnostic'; then a=1; else a=0; fi
+check 'wake logs dmesg diagnostics' "$a" 1
+run_power_case due_wake
+check 'due wake fetches exactly once' "$(wc -l <"$TEST_TMP/powerd-due_wake/curl.log" | tr -d ' ')" 1
+check 'successful due cycle schedules next target' "$(cat "$TEST_TMP/powerd-due_wake/target")" 160
+run_power_case tolerance_wake
+check 'wake within tolerance fetches once' "$(wc -l <"$TEST_TMP/powerd-tolerance_wake/curl.log" | tr -d ' ')" 1
+run_power_case timeout
+check 'event timeout runs due fetch' "$(wc -l <"$TEST_TMP/powerd-timeout/curl.log" | tr -d ' ')" 1
+if [ -s "$TEST_TMP/powerd-timeout/events.log" ]; then a=1; else a=0; fi
+check 'loop waits on event source' "$a" 1
 
-run_suspend_case debug_awake
-events="$TEST_TMP/events-debug_awake"
-if has_event "$events" 'pause:4'; then a=1; else a=0; fi
-check 'awake marker caps sleep interval' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'awake marker avoids mem request' "$a" 0
+run_power_case active_pause
+check 'active UI pauses overdue fetch' "$(cat "$TEST_TMP/powerd-active_pause/active-fetches")" 0
+if [ -s "$TEST_TMP/powerd-active_pause/return-repaint" ]; then a=1; else a=0; fi
+check 'return to screensaver repaints immediately' "$a" 1
+check 'return to screensaver resumes due fetch' "$(wc -l <"$TEST_TMP/powerd-active_pause/curl.log" | tr -d ' ')" 1
+run_power_case guard_lifecycle
+abort_count=$(grep -c 'abortSuspend 1' "$TEST_TMP/powerd-guard_lifecycle/lipc-set.log")
+if [ "$abort_count" -ge 2 ]; then a=1; else a=0; fi
+check 'guard renews ready transition hold after five seconds' "$a" 1
+check 'guard stop reaps guard process' "$(cat "$TEST_TMP/powerd-guard_lifecycle/guard-state")" stopped
+check 'guard stop reaps its real sleep child' "$(cat "$TEST_TMP/powerd-guard_lifecycle/live-sleeps")" 0
+[ ! -s "$TEST_TMP/powerd-guard_lifecycle/live-processes" ] || cat "$TEST_TMP/powerd-guard_lifecycle/live-processes" >&2
+run_power_case defer_leaves_active
+check 'defer that leaves screensaver prevents HTTP fetch' "$(wc -l <"$TEST_TMP/powerd-defer_leaves_active/curl.log" | tr -d ' ')" 0
+run_power_case guard_failure
+check 'failed suspend guard prevents HTTP fetch' "$(wc -l <"$TEST_TMP/powerd-guard_failure/curl.log" | tr -d ' ')" 0
+check 'failed guard schedules bounded retry' "$(cat "$TEST_TMP/powerd-guard_failure/target")" 110
+run_power_case unknown_pause
+check 'unknown UI state pauses overdue fetch' "$(wc -l <"$TEST_TMP/powerd-unknown_pause/curl.log" | tr -d ' ')" 0
+run_power_case polling
+check 'missing event tool falls back to five second poll' "$(cat "$TEST_TMP/powerd-polling/sleep.log")" 5
+check 'poll fallback runs due fetch' "$(wc -l <"$TEST_TMP/powerd-polling/curl.log" | tr -d ' ')" 1
 
-run_suspend_case debug_after_alarm
-events="$TEST_TMP/events-debug_after_alarm"
-if has_event "$events" 'read:' && [ -e "$TEST_TMP/debug-debug_after_alarm" ]; then a=1; else a=0; fi
-check 'debug override is rechecked after RTC programming' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'new debug override cancels mem request' "$a" 0
+run_power_case frontlight
+check 'frontlight saves original brightness' "$(cat "$TEST_TMP/powerd-frontlight/saved-first")" 12
+check 'repeated frontlight start preserves original' "$(cat "$TEST_TMP/powerd-frontlight/saved-second")" 12
+check 'frontlight is zero while dashboard runs' "$(cat "$TEST_TMP/powerd-frontlight/during")" 0
+check 'frontlight restores original brightness' "$(cat "$TEST_TMP/powerd-frontlight/frontlight")" 12
+if [ -e "$TEST_TMP/powerd-frontlight/ext/frontlight-state" ]; then a=1; else a=0; fi
+check 'frontlight restore clears saved state' "$a" 0
+run_power_case prepare_ui
+if has_event "$TEST_TMP/powerd-prepare_ui/lipc-set.log" 'preventScreenSaver 0' && ! has_event "$TEST_TMP/powerd-prepare_ui/lipc-set.log" 'preventScreenSaver 1'; then a=1; else a=0; fi
+check 'UI preparation allows powerd screensaver' "$a" 1
+run_power_case auto_entry_disabled
+if ! has_event "$TEST_TMP/powerd-auto_entry_disabled/lipc-set.log" 'powerButton' && ! has_event "$TEST_TMP/powerd-auto_entry_disabled/powerd.log" '-p'; then a=1; else a=0; fi
+check 'disabled automatic entry never presses power button' "$a" 1
+run_power_case screen_entry
+if has_event "$TEST_TMP/powerd-screen_entry/lipc-set.log" 'powerButton 1' && has_event "$TEST_TMP/powerd-screen_entry/powerd.log" '-p'; then a=1; else a=0; fi
+check 'screen entry falls back to powerd_test on command failure' "$a" 1
 
-run_suspend_case usb_awake
-events="$TEST_TMP/events-usb_awake"
-if has_event "$events" 'pause:4'; then a=1; else a=0; fi
-check 'fully charged USB-powered device stays awake' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'USB-powered awake device avoids mem request' "$a" 0
+run_power_case stop
+check 'actual stop script succeeds' "$(cat "$TEST_TMP/powerd-stop/command.rc")" 0
+check 'actual stop script restores saved frontlight' "$(cat "$TEST_TMP/powerd-stop/frontlight")" 12
+if has_event "$TEST_TMP/powerd-stop/lipc-set.log" 'wirelessEnable 1' && has_event "$TEST_TMP/powerd-stop/lipc-set.log" 'preventScreenSaver 0'; then a=1; else a=0; fi
+check 'actual stop script restores Wi-Fi and screensaver policy' "$a" 1
+run_power_case once
+check 'actual once script succeeds' "$(cat "$TEST_TMP/powerd-once/command.rc")" 0
+check 'once fetches one image while active' "$(wc -l <"$TEST_TMP/powerd-once/curl.log" | tr -d ' ')" 1
+check 'once exit restores original frontlight' "$(cat "$TEST_TMP/powerd-once/frontlight")" 12
+if [ ! -s "$TEST_TMP/powerd-once/events.log" ] && ! has_event "$TEST_TMP/powerd-once/lipc-set.log" 'powerButton' && ! has_event "$TEST_TMP/powerd-once/powerd.log" '-p'; then a=1; else a=0; fi
+check 'once never enters screensaver or subscribes to events' "$a" 1
 
-run_suspend_case wake_during_fallback
-events="$TEST_TMP/events-wake_during_fallback"
-if has_event "$events" 'sleep:5' && has_event "$events" 'sleep:4' && has_event "$events" 'wifi:1'; then a=1; else a=0; fi
-check 'USB wake during fallback enables Wi-Fi and caps remainder' "$a" 1
-if has_event "$events" ':mem'; then a=1; else a=0; fi
-check 'fallback USB wake avoids mem request' "$a" 0
+# Keep the old raw-suspend mechanism absent, including configurable aliases.
+if grep -E '(/sys/power/state|POWER_STATE_PATH|khd_(write_node|arm_alarm|sleep_cycle)|rtcwake)' "$LIB" "$SCRIPT_DIR/../extensions/kindle-ha-dash/bin/dash.sh" >/dev/null; then a=1; else a=0; fi
+check 'client has no raw kernel suspend path' "$a" 0
 
 if khd_claim_pid; then a=1; else a=0; fi
 check 'PID claim succeeds' "$a" 1
