@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "name": "Kindle HA Dashboard",
+      "items": [
+        { "name": "Start dashboard", "action": "sh /mnt/us/extensions/kindle-ha-dash/bin/start.sh", "exitmenu": true },
+        { "name": "Stop dashboard", "action": "sh /mnt/us/extensions/kindle-ha-dash/bin/stop.sh", "exitmenu": true },
+        { "name": "Refresh once", "action": "sh /mnt/us/extensions/kindle-ha-dash/bin/start.sh --once", "exitmenu": true }
+      ]
+    }
+  ]
+}

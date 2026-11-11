@@ -1,0 +1,37 @@
+name: Validate
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          comment: "false"
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.14.2'
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run mypy
+      - run: uv run pytest
+      - run: uv run python tools/preview.py --fixtures tests/fixtures --now 2026-11-11T14:31:00+02:00 --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-previews
+          path: out/*.png

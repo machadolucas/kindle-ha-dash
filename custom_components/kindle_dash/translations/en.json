@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Kindle dashboard",
+        "description": "Select data sources and a wake schedule. Uncovered time uses the default interval. All sources tolerate unavailable data.",
+        "data": {
+          "weather_entity": "Weather",
+          "outdoor_temperature_entity": "Outdoor temperature",
+          "outdoor_humidity_entity": "Outdoor humidity",
+          "indoor_temperature_entity": "Indoor temperature (optional)",
+          "prices_entity": "Official electricity prices",
+          "tomorrow_available_entity": "Tomorrow price availability",
+          "price_forecast_entity": "Electricity price forecast",
+          "dishwasher_entity": "Dishwasher schedule",
+          "dishwasher_running_entity": "Dishwasher running (optional)",
+          "schedule": "Wake periods (HH:MM-HH:MM minutes)",
+          "default_interval": "Uncovered time interval (minutes)",
+          "offset_seconds": "Wake offset (seconds)",
+          "full_refresh_every": "Full refresh every N requests",
+          "grace_minutes": "Check-in grace (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_options": "Check the schedule and numeric options. {error}"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kindle dashboard options",
+        "description": "Read-only token: `{token}`\n\nImage path: `{image_path}`\n\nStatus path: `{status_path}`\n\nAdd the Home Assistant URL before these paths. Regenerating the token requires updating the Kindle client.",
+        "data": {
+          "weather_entity": "Weather",
+          "outdoor_temperature_entity": "Outdoor temperature",
+          "outdoor_humidity_entity": "Outdoor humidity",
+          "indoor_temperature_entity": "Indoor temperature (optional)",
+          "prices_entity": "Official electricity prices",
+          "tomorrow_available_entity": "Tomorrow price availability",
+          "price_forecast_entity": "Electricity price forecast",
+          "dishwasher_entity": "Dishwasher schedule",
+          "dishwasher_running_entity": "Dishwasher running (optional)",
+          "schedule": "Wake periods (HH:MM-HH:MM minutes)",
+          "default_interval": "Uncovered time interval (minutes)",
+          "offset_seconds": "Wake offset (seconds)",
+          "full_refresh_every": "Full refresh every N requests",
+          "grace_minutes": "Check-in grace (minutes)",
+          "regenerate_token": "Regenerate access token"
+        }
+      }
+    },
+    "error": {
+      "invalid_options": "Check the schedule and numeric options. {error}"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "last_seen": {
+        "name": "Last seen"
+      },
+      "next_expected": {
+        "name": "Next expected check-in"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging"
+      },
+      "problem": {
+        "name": "Check-in problem"
+      }
+    }
+  },
+  "exceptions": {
+    "unload_failed": {
+      "message": "Unable to unload the Kindle dashboard entities."
+    }
+  }
+}

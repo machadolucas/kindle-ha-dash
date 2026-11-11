@@ -1,0 +1,14 @@
+{
+  "domain": "kindle_dash",
+  "name": "Kindle dashboard",
+  "codeowners": ["@machadolucas"],
+  "config_flow": true,
+  "dependencies": ["http"],
+  "documentation": "https://github.com/machadolucas/kindle-ha-dash",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/machadolucas/kindle-ha-dash/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
