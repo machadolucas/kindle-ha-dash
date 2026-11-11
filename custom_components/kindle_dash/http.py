@@ -132,7 +132,7 @@ class ImageView(_KindleView):
                 data = await async_dashboard_data(self.hass, runtime, battery)
                 local_now = now.astimezone(dt_util.get_time_zone(self.hass.config.time_zone))
                 body = await self.hass.async_add_executor_job(
-                    partial(render_dashboard, data, now=local_now),
+                    partial(render_dashboard, data, now=local_now, next_wake=wake),
                 )
             except Exception:  # A valid error PNG is part of the wire contract.
                 _LOGGER.exception("Unable to render Kindle dashboard")

@@ -11,8 +11,12 @@ uv run ruff check
 uv run mypy
 uv run pytest
 uv run python tools/preview.py --fixtures tests/fixtures --now 2026-11-11T14:31:00+02:00 --out out/preview.png
+uv run python tools/preview.py --fixtures tests/fixtures --now 2026-11-11T14:31:00+02:00 --next-wake-minutes 45 --out out/preview.png
 uv run python tools/preview.py --fixtures tests/fixtures --now 2026-11-11T14:31:00+02:00 --all
 ```
+
+`--next-wake-minutes` sets the viewing window used to round the dishwasher's
+whole-hour delay from its midpoint. It defaults to 30; use 60 for a night refresh.
 
 `out/` is ignored by git. All nine scenarios derive copies of captured fixtures;
 none modify `tests/fixtures/*.json`. The preview loader imports only the pure

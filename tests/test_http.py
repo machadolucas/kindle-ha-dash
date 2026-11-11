@@ -1,6 +1,7 @@
 """Exercise the real HA routes with an unauthenticated loopback client."""
 
 import logging
+from datetime import UTC, datetime
 from io import BytesIO
 from unittest.mock import patch
 
@@ -38,6 +39,24 @@ async def test_image_contract_preview_and_full_refresh(hass, configured):
     assert runtime.requests == 8
     assert (await client.get(f"{BASE}/image.png")).status == 200
     assert runtime.requests == 9
+
+
+async def test_renderer_receives_runtime_wake(configured):
+    entry, client = configured
+    fixed_now = datetime(2026, 11, 11, 12, 0, tzinfo=UTC)
+    captured = {}
+
+    def capture(_data, **kwargs):
+        captured.update(kwargs)
+        return b"png"
+
+    with (
+        patch("custom_components.kindle_dash.http.dt_util.utcnow", return_value=fixed_now),
+        patch("custom_components.kindle_dash.http.render_dashboard", side_effect=capture),
+    ):
+        response = await client.get(f"{BASE}/image.png?preview=1")
+    assert response.status == 200
+    assert captured["next_wake"] == entry.runtime_data.wake_at(fixed_now)
 
 
 @pytest.mark.parametrize(

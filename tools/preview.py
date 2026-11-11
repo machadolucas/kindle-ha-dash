@@ -125,6 +125,12 @@ def main() -> None:
     )
     parser.add_argument("--out", type=Path, default=Path("out"))
     parser.add_argument("--scenario", choices=SCENARIOS, default="normal")
+    parser.add_argument(
+        "--next-wake-minutes",
+        type=int,
+        default=30,
+        help="Viewing-window minutes for dishwasher delay rounding (default: 30)",
+    )
     parser.add_argument("--all", action="store_true", help="Render all scenarios into --out")
     args = parser.parse_args()
     scenarios = SCENARIOS if args.all else (args.scenario,)
@@ -134,7 +140,13 @@ def main() -> None:
         output = args.out / f"{scenario}.png" if args.all or args.out.is_dir() else args.out
         output.parent.mkdir(parents=True, exist_ok=True)
         data = build_scenario(args.fixtures, args.now, scenario)
-        output.write_bytes(_render.render_dashboard(data, now=args.now))
+        output.write_bytes(
+            _render.render_dashboard(
+                data,
+                now=args.now,
+                next_wake=args.now + timedelta(minutes=args.next_wake_minutes),
+            )
+        )
         print(output)
 
 

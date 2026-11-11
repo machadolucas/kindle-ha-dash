@@ -146,13 +146,28 @@ def hourly_prices(
 
 
 def next_hours_prices(slots: tuple[PriceSlot, ...], now: datetime) -> tuple[PriceSlot, ...]:
-    """Return six actual hours beginning at the current quarter-hour slot."""
+    """Return 24 elapsed quarter-hour slots beginning at the current quarter."""
     start_at = (now.timestamp() // 900) * 900
-    return hourly_prices(
-        slots,
-        datetime.fromtimestamp(start_at, now.tzinfo),
-        datetime.fromtimestamp(start_at + 6 * 3600, now.tzinfo),
-    )
+    resolved = _resolved_prices(slots)
+    result = []
+    for index in range(24):
+        left, right = start_at + index * 900, start_at + (index + 1) * 900
+        contributors = []
+        for slot in resolved:
+            overlap = min(right, slot.end.timestamp()) - max(left, slot.start.timestamp())
+            if overlap > 0:
+                contributors.append((slot, overlap))
+        if contributors:
+            total = sum(overlap for _, overlap in contributors)
+            result.append(
+                PriceSlot(
+                    datetime.fromtimestamp(left, now.tzinfo),
+                    datetime.fromtimestamp(right, now.tzinfo),
+                    sum(slot.buy * overlap for slot, overlap in contributors) / total,
+                    any(slot.forecast for slot, _ in contributors),
+                )
+            )
+    return tuple(result)
 
 
 def six_day_prices(slots: tuple[PriceSlot, ...], now: datetime) -> tuple[PriceSlot, ...]:

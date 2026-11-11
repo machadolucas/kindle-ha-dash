@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -144,17 +145,50 @@ def price_slots(start: datetime, count: int, *, forecast: bool = False) -> tuple
     )
 
 
-def test_next_hours_averages_only_current_and_future_quarters() -> None:
+def test_next_hours_returns_24_contiguous_quarters_from_current_quarter() -> None:
     start = datetime.fromisoformat("2026-11-11T14:00:00+02:00")
     slots = price_slots(start, 28)
     result = next_hours_prices(slots, start.replace(minute=31))
-    assert len(result) == 7
+    assert len(result) == 24
     assert result[0].start == start.replace(minute=30)
-    assert result[0].end == start.replace(hour=15)
-    assert result[0].buy == pytest.approx((0.03 + 0.04) / 2)
+    assert result[0].end == start.replace(minute=45)
+    assert result[0].buy == pytest.approx(0.03)
     assert result[-1].end == start.replace(hour=20, minute=30)
-    assert result[-1].buy == pytest.approx((0.25 + 0.26) / 2)
-    assert len(next_hours_prices(slots, start)) == 6
+    assert result[-1].buy == pytest.approx(0.26)
+    assert all(a.end.timestamp() == b.start.timestamp() for a, b in pairwise(result))
+    assert len(next_hours_prices(slots, start)) == 24
+
+
+def test_next_hours_splits_hour_forecast_and_keeps_missing_quarters_absent() -> None:
+    start = datetime.fromisoformat("2026-11-11T14:00:00+02:00")
+    hourly_forecast = PriceSlot(start, start.replace(hour=15), 0.4, True)
+    official = PriceSlot(start.replace(hour=15), start.replace(hour=15, minute=15), 0.2)
+    result = next_hours_prices((hourly_forecast, official), start)
+    assert len(result) == 5
+    assert [slot.buy for slot in result] == pytest.approx([0.4] * 4 + [0.2])
+    assert [slot.forecast for slot in result] == [True] * 4 + [False]
+
+
+def test_next_hours_uses_time_weighted_mean_for_partial_contributors() -> None:
+    start = datetime.fromisoformat("2026-11-11T14:00:00+02:00")
+    slots = (
+        PriceSlot(start, start.replace(minute=10), 0.1),
+        PriceSlot(start.replace(minute=10), start.replace(minute=15), 0.4),
+    )
+    result = next_hours_prices(slots, start)
+    assert result[0].buy == pytest.approx((10 * 0.1 + 5 * 0.4) / 15)
+
+
+@pytest.mark.parametrize("day", ["2026-03-29", "2026-10-25"])
+def test_next_hours_quarters_are_elapsed_time_across_dst(day: str) -> None:
+    zone = ZoneInfo("Europe/Helsinki")
+    midnight = datetime.fromisoformat(day).replace(tzinfo=zone)
+    slots = price_slots(midnight, 96)
+    now = midnight.replace(hour=2, minute=37)
+    result = next_hours_prices(slots, now)
+    assert len(result) == 24
+    assert result[0].start.timestamp() == (now.timestamp() // 900) * 900
+    assert result[-1].end.timestamp() - result[0].start.timestamp() == 6 * 3600
 
 
 def test_hourly_prices_preserves_missing_hours_and_averages_available_quarters() -> None:
