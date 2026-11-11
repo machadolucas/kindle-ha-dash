@@ -201,11 +201,9 @@ def parse_dashboard(
 
     weather_attrs = attrs("weather_entity")
     temp = number(entity("outdoor_temperature_entity").get("state"))
-    humidity = number(entity("outdoor_humidity_entity").get("state"))
     weather = Weather(
         condition=str(entity("weather_entity").get("state") or "unknown"),
         temperature=temp if temp is not None else number(weather_attrs.get("temperature")),
-        humidity=humidity if humidity is not None else number(weather_attrs.get("humidity")),
         wind_speed=number(weather_attrs.get("wind_speed")),
         wind_unit=str(weather_attrs.get("wind_speed_unit") or "m/s"),
         wind_bearing=number(weather_attrs.get("wind_bearing")),

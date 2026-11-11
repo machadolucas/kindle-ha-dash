@@ -17,7 +17,6 @@ class Forecast:
 class Weather:
     condition: str = "unknown"
     temperature: float | None = None
-    humidity: float | None = None
     wind_speed: float | None = None
     wind_unit: str = "m/s"
     wind_bearing: float | None = None

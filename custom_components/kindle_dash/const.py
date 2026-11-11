@@ -5,7 +5,6 @@ DEFAULT_SCHEDULE = "08:30-00:00 30\n00:00-08:30 60"
 DEFAULT_ENTITIES = {
     "weather_entity": "weather.forecast_home",
     "outdoor_temperature_entity": "sensor.outdoor_sensor_temperature",
-    "outdoor_humidity_entity": "sensor.outdoor_sensor_humidity",
     "indoor_temperature_entity": "sensor.average_temperature_inside",
     "prices_entity": "sensor.nordpool_fi_day_ahead",
     "tomorrow_available_entity": "binary_sensor.nordpool_tomorrow_prices_availability",

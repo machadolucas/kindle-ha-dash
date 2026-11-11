@@ -177,7 +177,7 @@ def test_indoor_reading_groups_with_outdoor_above_dishwasher(scenario, drawn_tex
         else f"{data.weather.indoor_temperature:.1f}°"
     )
     assert not any(call[1].startswith("Inside") for call in drawn_text)
-    card_top = next(y for y in range(90, 400) if image.getpixel((28, y)) == 136)
+    card_top = next(y for y in range(330, 500) if image.getpixel((536, y)) == 136)
     house_area = image.crop((outdoor[4][0], outdoor[4][3], indoor[4][0], card_top))
     house_bounds = house_area.point(lambda gray: 255 if gray == 136 else 0).getbbox()
     assert house_bounds is not None
@@ -212,10 +212,10 @@ def test_delay_rounds_to_nearest_hour(seconds, expected):
 @pytest.mark.parametrize(
     ("delay", "headline", "detail"),
     [
-        (timedelta(minutes=45), "In 1 h", "start 15:16 · ends 17:16 · 12.0 c/kWh"),
-        (timedelta(hours=2), "In 2 h", "start 16:31 · ends 18:31 · 12.0 c/kWh"),
-        (timedelta(hours=2, minutes=10), "In 2 h", "start 16:41 · ends 18:41 · 12.0 c/kWh"),
-        (timedelta(hours=13), "In 13 h", "start 03:31 Thu · ends 05:31 · 12.0 c/kWh"),
+        (timedelta(minutes=45), "In 1 h", ("start 15:16", "ends 17:16", "12.0 c/kWh")),
+        (timedelta(hours=2), "In 2 h", ("start 16:31", "ends 18:31", "12.0 c/kWh")),
+        (timedelta(hours=2, minutes=10), "In 2 h", ("start 16:41", "ends 18:41", "12.0 c/kWh")),
+        (timedelta(hours=13), "In 13 h", ("start 03:31 Thu", "ends 05:31", "12.0 c/kWh")),
     ],
 )
 def test_dishwasher_future_start_detail(delay, headline, detail):
@@ -276,20 +276,21 @@ def test_renderer_none_wake_matches_explicit_thirty_minute_default():
     )
 
 
-def test_key_text_uses_crisp_black_and_white_pixels():
+def test_key_text_uses_crisp_black_and_white_pixels(drawn_text):
     data = build_scenario(FIXTURES, NOW, "normal")
     image = Image.open(BytesIO(_render.render_dashboard(data, now=NOW)))
-    for box in ((28, 24, 700, 72), (281, 240, 430, 285), (48, 376, 900, 490)):
-        assert set(image.crop(box).get_flattened_data()) <= {0, 255}
+    for _, value, _, _, box in drawn_text:
+        if not value.endswith("%"):
+            assert set(image.crop(box).get_flattened_data()) <= {0, 255}
 
 
 @pytest.mark.parametrize(
     ("dish", "expected"),
     [
-        (Dishwasher(enabled=False), ("Scheduling off", "")),
-        (Dishwasher(status="unknown"), ("No schedule yet", "")),
-        (Dishwasher(running=True), ("Run now", "until —")),
-        (Dishwasher(running=True, remaining_minutes=41), ("Run now", "until 15:12")),
+        (Dishwasher(enabled=False), ("Scheduling off", ())),
+        (Dishwasher(status="unknown"), ("No schedule yet", ())),
+        (Dishwasher(running=True), ("Run now", ())),
+        (Dishwasher(running=True, remaining_minutes=41), ("Run now", ("until 15:12",))),
         (
             Dishwasher(
                 periods=(
@@ -298,12 +299,116 @@ def test_key_text_uses_crisp_black_and_white_pixels():
                     ),
                 )
             ),
-            ("Run now", "until 15:12"),
+            ("Run now", ("until 15:12",)),
         ),
     ],
 )
 def test_dishwasher_operational_states(dish, expected):
     assert _render.dishwasher_summary(dish, NOW) == expected
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    (
+        *SCENARIOS,
+        "start_now",
+        "future_without_price",
+        "running_without_price",
+        "running_without_end",
+    ),
+)
+def test_dishwasher_columns_fit_compact_rounded_card(scenario, drawn_text, monkeypatch):
+    data = build_scenario(FIXTURES, NOW, scenario if scenario in SCENARIOS else "normal")
+    expected_title = "In 12 h"
+    expected_lines = ("start 03:15 Thu", "ends 06:00", "10.4 c/kWh")
+    if scenario == "start_now":
+        start = NOW + timedelta(minutes=20)
+        data = replace(
+            data,
+            dishwasher=Dishwasher(
+                periods=(DishwasherPeriod(start, start + timedelta(hours=2), avg_cost=0.104),)
+            ),
+        )
+        expected_title = "Start now"
+        expected_lines = ("start 14:51", "ends 16:51", "10.4 c/kWh")
+    elif scenario == "future_without_price":
+        data = replace(
+            data,
+            dishwasher=replace(
+                data.dishwasher,
+                periods=tuple(replace(period, avg_cost=None) for period in data.dishwasher.periods),
+            ),
+        )
+        expected_lines = expected_lines[:2]
+    elif scenario in {"running_without_price", "running_without_end"}:
+        dish = Dishwasher(running=True)
+        if scenario == "running_without_price":
+            dish = replace(
+                dish,
+                periods=(
+                    DishwasherPeriod(NOW - timedelta(minutes=5), NOW + timedelta(minutes=41)),
+                ),
+            )
+        data = replace(data, dishwasher=dish)
+        expected_title = "Run now"
+        expected_lines = ("until 15:12",) if scenario == "running_without_price" else ()
+    elif scenario == "dishwasher_running":
+        expected_title, expected_lines = "Run now", ("until 16:03", "10.4 c/kWh")
+    elif scenario == "dishwasher_disabled":
+        expected_title, expected_lines = "Scheduling off", ()
+    elif scenario in {"dishwasher_unknown", "all_unavailable"}:
+        expected_title, expected_lines = "No schedule yet", ()
+
+    cards = []
+    original = ImageDraw.ImageDraw.rounded_rectangle
+
+    def record_card(draw, xy, *args, **kwargs):
+        if xy[2] - xy[0] > 900:
+            cards.append((xy, kwargs))
+        original(draw, xy, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "rounded_rectangle", record_card)
+    image = Image.new("L", (1072, 1448), 255)
+    draw = ImageDraw.Draw(image)
+    draw.fontmode = "1"
+    _render._dishwasher(draw, data, NOW, None)
+    assert len(cards) == 1
+    (left, top, right, bottom), style = cards[0]
+    assert bottom - top <= 170
+    assert 14 <= style["radius"] <= 18
+    assert style["outline"] == 136 and style["width"] == 2
+    assert image.getpixel((left, top)) == 255
+    assert image.getpixel((left + style["radius"], top)) == 136
+    caption, headline, *details = drawn_text
+    assert caption[1] == "DISHWASHER" and caption[4][3] < headline[4][1]
+    assert headline[1] == expected_title
+    if expected_title in {"Scheduling off", "No schedule yet"}:
+        assert 30 < headline[2] < 110
+    else:
+        assert headline[2] == 116
+    # Long states also respect the reserved right column when its data is absent.
+    assert headline[4][2] <= 732
+    assert tuple(call[1] for call in details) == expected_lines
+    for _, value, size, bold, bounds in drawn_text:
+        assert size >= 30 and bold
+        assert left < bounds[0] < bounds[2] < right, value
+        assert top < bounds[1] < bounds[3] < bottom, value
+        assert set(image.crop(bounds).get_flattened_data()) <= {0, 255}, value
+    for _, value, size, bold, bounds in details:
+        assert size >= 36 and bold
+        assert bounds[2] == pytest.approx(right - 20, abs=1), value
+        assert bounds[0] - headline[4][2] >= 24, value
+    if details:
+        detail_center = (details[0][4][1] + details[-1][4][3]) / 2
+        headline_center = (headline[4][1] + headline[4][3]) / 2
+        assert detail_center == pytest.approx(headline_center, abs=1)
+        for previous, following in pairwise(details):
+            assert previous[4][3] < following[4][1]
+    # The filled appliance is 95 px tall, before the caption/headline column.
+    icon = image.crop((left + 20, top + 10, caption[4][0] - 20, bottom - 10))
+    ink = icon.point(lambda gray: 255 if gray != 255 else 0).getbbox()
+    assert ink is not None and 80 <= ink[3] - ink[1] <= 100
+    assert {85, 136, 153, 204, 221} <= set(icon.get_flattened_data())
 
 
 def test_two_chart_headings_hour_labels_live_price_and_daily_means(drawn_text):
@@ -456,4 +561,4 @@ def _assert_quarter_chart_geometry(data, monkeypatch, *, expect_24):
 def test_running_uses_remaining_time_instead_of_future_schedule_end():
     future = DishwasherPeriod(NOW + timedelta(hours=1), NOW + timedelta(hours=3), "official")
     dish = Dishwasher(running=True, remaining_minutes=41, periods=(future,))
-    assert _render.dishwasher_summary(dish, NOW) == ("Run now", "until 15:12")
+    assert _render.dishwasher_summary(dish, NOW) == ("Run now", ("until 15:12",))

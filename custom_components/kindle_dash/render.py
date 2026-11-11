@@ -171,15 +171,15 @@ def weather_icon(
 
 def _weather(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) -> None:
     weather = data.weather
-    weather_icon(draw, weather.condition, 24, 100, 183, night=now.hour < 7 or now.hour > 17)
+    weather_icon(draw, weather.condition, 16, 124, 210, night=now.hour < 7 or now.hour > 17)
     temperature = _fmt(weather.temperature, "°")
-    size = _fit(draw, temperature, 104, 300)
-    _text(draw, (217, 148), temperature, size)
+    size = _fit(draw, temperature, 115, 260)
+    _text(draw, (236, 161), temperature, size)
     # Align the indoor group with the outdoor value, well above the next card.
-    draw.polygon(((217, 257), (243, 236), (269, 257)), fill=136)
-    draw.rectangle((223, 255, 263, 283), fill=136)
-    draw.rectangle((238, 268, 248, 283), fill=255)
-    _text(draw, (281, 240), _fmt(weather.indoor_temperature, "°"), 54)
+    draw.polygon(((236, 284), (262, 263), (288, 284)), fill=136)
+    draw.rectangle((242, 282, 282, 310), fill=136)
+    draw.rectangle((257, 295, 267, 310), fill=255)
+    _text(draw, (300, 267), _fmt(weather.indoor_temperature, "°"), 54)
     # Clock-hour targets three hours apart, rather than four adjacent forecasts.
     first = now.replace(minute=0, second=0, microsecond=0).timestamp() + 3 * 3600
     for index in range(4):
@@ -189,16 +189,16 @@ def _weather(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) -> N
             None,
         )
         x = 566 + index * 136
-        _text(draw, (x, 111), target.strftime("%H:%M"), 34, anchor="mt")
+        _text(draw, (x, 122), target.strftime("%H:%M"), 34, anchor="mt")
         weather_icon(
             draw,
             entry.condition if entry else "unknown",
-            x - 60,
-            128,
-            120,
+            x - 68,
+            146,
+            136,
             night=target.hour < 7 or target.hour > 17,
         )
-        _text(draw, (x, 252), _fmt(entry.temperature if entry else None, "°"), 44, anchor="mt")
+        _text(draw, (x, 291), _fmt(entry.temperature if entry else None, "°"), 50, anchor="mt")
 
 
 def format_delay(seconds: float) -> str:
@@ -209,7 +209,7 @@ def format_delay(seconds: float) -> str:
 
 def dishwasher_summary(
     dish: Dishwasher, now: datetime, next_wake: datetime | None = None
-) -> tuple[str, str]:
+) -> tuple[str, tuple[str, ...]]:
     """Pure operational copy, shared by the renderer and semantic tests."""
     upcoming = sorted(
         (period for period in dish.periods if period.end.timestamp() > now.timestamp()),
@@ -220,8 +220,9 @@ def dishwasher_summary(
     )
     period = active or next(iter(upcoming), None)
     if not dish.enabled:
-        return "Scheduling off", ""
+        return "Scheduling off", ()
     if dish.running or active:
+        lines = []
         if active:
             end = active.end.astimezone(now.tzinfo).strftime("%H:%M")
         elif dish.remaining_minutes is not None:
@@ -229,28 +230,55 @@ def dishwasher_summary(
                 now.timestamp() + max(0, dish.remaining_minutes) * 60, now.tzinfo
             ).strftime("%H:%M")
         else:
-            end = "—"
-        return "Run now", f"until {end}"
+            end = None
+        if end is not None:
+            lines.append(f"until {end}")
+        if active and active.avg_cost is not None:
+            lines.append(f"{active.avg_cost * 100:.1f} c/kWh")
+        return "Run now", tuple(lines)
     if not period:
-        return "No schedule yet", ""
+        return "No schedule yet", ()
     start = period.start.astimezone(now.tzinfo)
     day = start.strftime(" %a") if start.date() != now.date() else ""
-    detail = f"start {start:%H:%M}{day} · ends {period.end.astimezone(now.tzinfo):%H:%M}"
+    lines = [f"start {start:%H:%M}{day}", f"ends {period.end.astimezone(now.tzinfo):%H:%M}"]
     if period.avg_cost is not None:
-        detail += f" · {period.avg_cost * 100:.1f} c/kWh"
+        lines.append(f"{period.avg_cost * 100:.1f} c/kWh")
     wake_at = next_wake.timestamp() if next_wake is not None else now.timestamp() + 1800
     view_mid = (now.timestamp() + wake_at) / 2
-    return format_delay(period.start.timestamp() - view_mid), detail
+    return format_delay(period.start.timestamp() - view_mid), tuple(lines)
+
+
+def _dishwasher_icon(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
+    """A filled appliance silhouette in the same grays as the weather icons."""
+    draw.rounded_rectangle((x, y, x + 78, y + 94), radius=9, fill=204, outline=136, width=4)
+    draw.rounded_rectangle((x + 4, y + 4, x + 74, y + 25), radius=5, fill=153)
+    for offset in (12, 24):
+        draw.ellipse((x + offset, y + 11, x + offset + 5, y + 16), fill=85)
+    draw.ellipse((x + 57, y + 8, x + 68, y + 19), fill=85)
+    draw.line((x + 19, y + 35, x + 59, y + 35), fill=85, width=5)
+    # A recessed front panel and plate distinguish it from a washing machine.
+    draw.rounded_rectangle((x + 12, y + 47, x + 66, y + 81), radius=5, fill=221)
+    draw.arc((x + 24, y + 48, x + 54, y + 75), 0, 180, fill=136, width=4)
+    draw.line((x + 17, y + 76, x + 61, y + 76), fill=153, width=3)
 
 
 def _dishwasher(
     draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime, next_wake: datetime | None
 ) -> None:
-    draw.rectangle((28, 320, 1044, 544), outline=136, width=2)
-    _text(draw, (48, 338), "DISHWASHER", 32)
-    title, detail = dishwasher_summary(data.dishwasher, now, next_wake)
-    _text(draw, (48, 376), title, _fit(draw, title, 110, 976))
-    _text(draw, (48, 498), detail, _fit(draw, detail, 44, 976))
+    draw.rounded_rectangle((28, 368, 1044, 532), radius=16, outline=136, width=2)
+    _text(draw, (160, 386), "DISHWASHER", 30)
+    title, lines = dishwasher_summary(data.dishwasher, now, next_wake)
+    # Keep a fixed gutter before the details, including states without a schedule.
+    size = _fit(draw, title, 116, 568)
+    headline_box = draw.textbbox((160, 420), title, font=_font(size), anchor="lt")
+    center = (headline_box[1] + headline_box[3]) / 2
+    _dishwasher_icon(draw, 52, round(center - 47))
+    _text(draw, (160, 420), title, size)
+    heights = [draw.textbbox((0, 0), line, font=_font(36), anchor="lt")[3] for line in lines]
+    top = center - (sum(heights) + max(0, len(lines) - 1) * 10) / 2
+    for line, height in zip(lines, heights, strict=True):
+        _text(draw, (1024, top), line, 36, anchor="rt")
+        top += height + 10
 
 
 def _tier(value: float) -> int:

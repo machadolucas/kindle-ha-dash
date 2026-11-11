@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .const import DEFAULT_ENTITIES
 from .data import parse_dashboard
 from .models import DashboardData, Meta
 from .runtime import KindleDashRuntime
@@ -46,7 +47,7 @@ async def async_dashboard_data(
     states = {
         entity_id: {"state": state.state, "attributes": dict(state.attributes)}
         for key, entity_id in options.items()
-        if key.endswith("_entity") and entity_id and (state := hass.states.get(entity_id))
+        if key in DEFAULT_ENTITIES and entity_id and (state := hass.states.get(entity_id))
     }
     return parse_dashboard(
         states,

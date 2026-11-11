@@ -16,6 +16,7 @@ async def test_ui_setup_and_single_instance(hass):
             context={"source": config_entries.SOURCE_USER},
         )
         assert result["type"] is FlowResultType.FORM
+        assert "outdoor_humidity_entity" not in result["data_schema"].schema
         result = await hass.config_entries.flow.async_configure(result["flow_id"], DEFAULT_OPTIONS)
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert len(result["data"]["token"]) >= 43
@@ -69,4 +70,42 @@ async def test_options_reject_schedule_without_changing_token(hass):
         {**DEFAULT_OPTIONS, "schedule": "broken", "regenerate_token": True},
     )
     assert result["errors"] == {"base": "invalid_options"}
+    assert entry.data["token"] == "test-only"
+
+
+async def test_stale_humidity_option_is_dropped_after_usable_options_flow(hass):
+    legacy_options = {
+        **DEFAULT_OPTIONS,
+        "outdoor_humidity_entity": "sensor.old_humidity",
+        "token_generation": 7,
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"token": "test-only"},
+        options=legacy_options,
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert "outdoor_humidity_entity" not in result["data_schema"].schema
+
+    invalid = {**DEFAULT_OPTIONS, "schedule": "broken"}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], invalid)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_options"}
+    assert "outdoor_humidity_entity" not in result["data_schema"].schema
+
+    with patch.object(hass.config_entries, "async_reload", new_callable=AsyncMock) as reload:
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {**DEFAULT_OPTIONS, "default_interval": 45, "regenerate_token": False},
+        )
+        await hass.async_block_till_done()
+        reload.assert_awaited_once_with(entry.entry_id)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert "outdoor_humidity_entity" not in result["data"]
+    assert result["data"]["token_generation"] == 7
+    assert result["data"]["schedule"] == DEFAULT_OPTIONS["schedule"]
+    assert result["data"]["default_interval"] == 45
+    assert entry.options == result["data"]
     assert entry.data["token"] == "test-only"

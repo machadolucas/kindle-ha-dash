@@ -7,7 +7,6 @@
         "data": {
           "weather_entity": "Weather",
           "outdoor_temperature_entity": "Outdoor temperature",
-          "outdoor_humidity_entity": "Outdoor humidity",
           "indoor_temperature_entity": "Indoor temperature (optional)",
           "prices_entity": "Official electricity prices",
           "tomorrow_available_entity": "Tomorrow price availability",
@@ -23,9 +22,8 @@
         "data_description": {
           "weather_entity": "Current condition and hourly forecast.",
           "outdoor_temperature_entity": "Shown as the large temperature. Falls back to the weather entity when unavailable.",
-          "outdoor_humidity_entity": "Optional. Falls back to the weather entity.",
           "indoor_temperature_entity": "Shown next to the house icon. Leave empty to hide it.",
-          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (€/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
+          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (\u20ac/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
           "tomorrow_available_entity": "On when tomorrow's official prices are published.",
           "price_forecast_entity": "Optional. Fills the 6-day chart (in light gray) for hours without official prices.",
           "dishwasher_entity": "Load Scheduler schedule sensor whose next period gives the dishwasher start time.",
@@ -50,7 +48,6 @@
         "data": {
           "weather_entity": "Weather",
           "outdoor_temperature_entity": "Outdoor temperature",
-          "outdoor_humidity_entity": "Outdoor humidity",
           "indoor_temperature_entity": "Indoor temperature (optional)",
           "prices_entity": "Official electricity prices",
           "tomorrow_available_entity": "Tomorrow price availability",
@@ -67,9 +64,8 @@
         "data_description": {
           "weather_entity": "Current condition and hourly forecast.",
           "outdoor_temperature_entity": "Shown as the large temperature. Falls back to the weather entity when unavailable.",
-          "outdoor_humidity_entity": "Optional. Falls back to the weather entity.",
           "indoor_temperature_entity": "Shown next to the house icon. Leave empty to hide it.",
-          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (€/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
+          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (\u20ac/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
           "tomorrow_available_entity": "On when tomorrow's official prices are published.",
           "price_forecast_entity": "Optional. Fills the 6-day chart (in light gray) for hours without official prices.",
           "dishwasher_entity": "Load Scheduler schedule sensor whose next period gives the dishwasher start time.",

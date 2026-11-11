@@ -62,7 +62,10 @@ def options_schema(values: dict[str, Any], *, options: bool = False) -> probatio
 
 def validated_options(user_input: dict[str, Any]) -> dict[str, Any]:
     """Reject invalid schedules and bounds with a translated form error."""
-    values = {**DEFAULT_OPTIONS, **user_input}
+    values = {
+        **DEFAULT_OPTIONS,
+        **{key: value for key, value in user_input.items() if key in DEFAULT_OPTIONS},
+    }
     # Omitted optional selectors mean the user cleared them, not reset to default.
     for key in DEFAULT_ENTITIES:
         values[key] = user_input.get(key, "")
@@ -81,7 +84,6 @@ def validated_options(user_input: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Numeric options must be whole numbers within the displayed range")
         values[key] = int(value)
     parse_schedule(values["schedule"], values["default_interval"])
-    values.pop("regenerate_token", None)
     return values
 
 
