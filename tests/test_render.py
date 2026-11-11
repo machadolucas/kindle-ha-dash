@@ -124,21 +124,74 @@ def drawn_text(monkeypatch):
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
-@pytest.mark.parametrize("battery", [None, 0, 9, 24, 25, 100])
+@pytest.mark.parametrize("battery", [None, 0, 9, 24, 25, 83, 100])
 def test_header_reserved_corner_readable_fonts_and_text_bounds(scenario, battery, drawn_text):
     data = build_scenario(FIXTURES, NOW, scenario)
     data = replace(data, meta=replace(data.meta, battery=battery))
     image = Image.open(BytesIO(_render.render_dashboard(data, now=NOW)))
-    assert image.crop((942, 0, 1072, 70)).getextrema() == (255, 255)
+    # Nothing is drawn right of the header rule.
+    assert image.crop((1046, 0, 1072, 70)).getextrema() == (255, 255)
     labels = [call[1] for call in drawn_text]
     assert "Wed 11 Nov · 14:31" in labels
     battery_labels = [value for value in labels if value.endswith("%")]
-    assert battery_labels == ([f"{battery}%"] if battery is not None and battery < 25 else [])
+    assert battery_labels == ([f"{battery}%"] if battery is not None else [])
+    header_right = image.crop((700, 0, 1072, 70))
+    assert set(header_right.get_flattened_data()) == ({136, 255} if battery is not None else {255})
+    if battery is not None:
+        label = next(call for call in drawn_text if call[1] == f"{battery}%")
+        left, _, right, _ = label[4]
+        assert right <= 1044
+        assert image.crop((700, 20, left - 8, 70)).getextrema() == (136, 255)
     for _, value, size, bold, (left, top, right, bottom) in drawn_text:
         assert size >= 30, value
         assert bold, value
         assert 0 <= left <= right <= 1072, (value, left, right)
         assert 0 <= top <= bottom <= 1448, (value, top, bottom)
+
+
+def test_battery_glyph_fill_tracks_charge_level(drawn_text):
+    data = build_scenario(FIXTURES, NOW, "normal")
+    levels = (0, 25, 50, 75, 100)
+    ink = []
+    for level in levels:
+        data = replace(data, meta=replace(data.meta, battery=level))
+        image = Image.open(BytesIO(_render.render_dashboard(data, now=NOW)))
+        label = next(call for call in drawn_text if call[1] == f"{level}%")
+        glyph = image.crop((700, 20, label[4][0] - 8, 70))
+        ink.append(sum(pixel == 136 for pixel in glyph.get_flattened_data()))
+    assert all(a < b for a, b in pairwise(ink))
+    for level, pixels in zip(levels, ink, strict=True):
+        assert (pixels - ink[0]) / (ink[-1] - ink[0]) == pytest.approx(level / 100, abs=0.04)
+
+
+@pytest.mark.parametrize("scenario", ["normal", "all_unavailable"])
+def test_indoor_reading_groups_with_outdoor_above_dishwasher(scenario, drawn_text):
+    data = build_scenario(FIXTURES, NOW, scenario)
+    image = Image.open(BytesIO(_render.render_dashboard(data, now=NOW)))
+    outdoor_value = "—" if data.weather.temperature is None else f"{data.weather.temperature:.1f}°"
+    outdoor = next(call for call in drawn_text if call[1] == outdoor_value and call[2] > 54)
+    indoor = next(call for call in drawn_text if call[2] == 54)
+    assert indoor[1] == (
+        "—"
+        if data.weather.indoor_temperature is None
+        else f"{data.weather.indoor_temperature:.1f}°"
+    )
+    assert not any(call[1].startswith("Inside") for call in drawn_text)
+    card_top = next(y for y in range(90, 400) if image.getpixel((28, y)) == 136)
+    house_area = image.crop((outdoor[4][0], outdoor[4][3], indoor[4][0], card_top))
+    house_bounds = house_area.point(lambda gray: 255 if gray == 136 else 0).getbbox()
+    assert house_bounds is not None
+    assert house_bounds[0] == 0  # The group shares the outdoor value's left edge.
+    assert 45 <= house_bounds[3] - house_bounds[1] <= 50
+    house_top = outdoor[4][3] + house_bounds[1]
+    house_bottom = outdoor[4][3] + house_bounds[3]
+    # A missing value's dash is shorter than the normal numeric line box.
+    outdoor_line_bottom = outdoor[0][1] + _render._font(outdoor[2]).getbbox("0°", anchor="lt")[3]
+    reading_gap = min(house_top, indoor[4][1]) - outdoor_line_bottom
+    card_gap = card_top - max(house_bottom, indoor[4][3])
+    assert 0 < reading_gap <= 20
+    assert card_gap >= 2 * reading_gap
+    assert set(image.crop(indoor[4]).get_flattened_data()) == {0, 255}
 
 
 @pytest.mark.parametrize(
@@ -226,7 +279,7 @@ def test_renderer_none_wake_matches_explicit_thirty_minute_default():
 def test_key_text_uses_crisp_black_and_white_pixels():
     data = build_scenario(FIXTURES, NOW, "normal")
     image = Image.open(BytesIO(_render.render_dashboard(data, now=NOW)))
-    for box in ((28, 24, 700, 72), (28, 291, 380, 350), (48, 400, 900, 530)):
+    for box in ((28, 24, 700, 72), (281, 240, 430, 285), (48, 376, 900, 490)):
         assert set(image.crop(box).get_flattened_data()) <= {0, 255}
 
 
@@ -396,7 +449,7 @@ def _assert_quarter_chart_geometry(data, monkeypatch, *, expect_24):
         label_top = round(bottom - (bounds[2] - bounds[0]))
         assert x0 <= label_left < label_right <= x1 + 1, value
         assert chart_left <= label_left and label_right <= chart_right
-        assert 656 <= label_top < bottom < y0, (value, label_top, bottom, y0)
+        assert 622 <= label_top < bottom < y0, (value, label_top, bottom, y0)
         assert x0 == chart_left + round(index * (chart_right - chart_left) / 24)
 
 

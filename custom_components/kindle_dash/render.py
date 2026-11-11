@@ -175,7 +175,11 @@ def _weather(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) -> N
     temperature = _fmt(weather.temperature, "°")
     size = _fit(draw, temperature, 104, 300)
     _text(draw, (217, 148), temperature, size)
-    _text(draw, (28, 291), f"Inside {_fmt(weather.indoor_temperature, '°')}", 54)
+    # Align the indoor group with the outdoor value, well above the next card.
+    draw.polygon(((217, 257), (243, 236), (269, 257)), fill=136)
+    draw.rectangle((223, 255, 263, 283), fill=136)
+    draw.rectangle((238, 268, 248, 283), fill=255)
+    _text(draw, (281, 240), _fmt(weather.indoor_temperature, "°"), 54)
     # Clock-hour targets three hours apart, rather than four adjacent forecasts.
     first = now.replace(minute=0, second=0, microsecond=0).timestamp() + 3 * 3600
     for index in range(4):
@@ -190,11 +194,11 @@ def _weather(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) -> N
             draw,
             entry.condition if entry else "unknown",
             x - 60,
-            156,
+            128,
             120,
             night=target.hour < 7 or target.hour > 17,
         )
-        _text(draw, (x, 291), _fmt(entry.temperature if entry else None, "°"), 44, anchor="mt")
+        _text(draw, (x, 252), _fmt(entry.temperature if entry else None, "°"), 44, anchor="mt")
 
 
 def format_delay(seconds: float) -> str:
@@ -242,11 +246,11 @@ def dishwasher_summary(
 def _dishwasher(
     draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime, next_wake: datetime | None
 ) -> None:
-    draw.rectangle((28, 354, 1044, 578), outline=68, width=5)
-    _text(draw, (48, 372), "DISHWASHER", 32)
+    draw.rectangle((28, 320, 1044, 544), outline=136, width=2)
+    _text(draw, (48, 338), "DISHWASHER", 32)
     title, detail = dishwasher_summary(data.dishwasher, now, next_wake)
-    _text(draw, (48, 410), title, _fit(draw, title, 110, 976))
-    _text(draw, (48, 532), detail, _fit(draw, detail, 44, 976))
+    _text(draw, (48, 376), title, _fit(draw, title, 110, 976))
+    _text(draw, (48, 498), detail, _fit(draw, detail, 44, 976))
 
 
 def _tier(value: float) -> int:
@@ -295,10 +299,10 @@ def _six_hours(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) ->
         ),
         None,
     )
-    _text(draw, (28, 606), "Next 6 hours", 40)
+    _text(draw, (28, 572), "Next 6 hours", 40)
     caption = f"now {_fmt(current.buy * 100 if current else None)} c/kWh"
-    _text(draw, (1044, 606), caption, 40, anchor="rt")
-    left, right, top, bottom = 28, 1044, 752, 928
+    _text(draw, (1044, 572), caption, 40, anchor="rt")
+    left, right, top, bottom = 28, 1044, 718, 928
     low, high = chart_limits(slots)
 
     def yp(value: float) -> float:
@@ -390,6 +394,25 @@ def _six_days(draw: ImageDraw.ImageDraw, data: DashboardData, now: datetime) -> 
         _message(draw, ((left + right) / 2, (top + bottom) / 2), "No prices yet")
 
 
+_HEADER_RIGHT = 1044
+
+
+def _battery(draw: ImageDraw.ImageDraw, level: int) -> None:
+    """Gray diagnostic battery, right-aligned with the header rule.
+
+    It sits where the stock UI draws its airplane icon; the Kindle client
+    repaints our image after turning wifi off, so the icon never stays.
+    """
+    label = f"{level}%"
+    left = _HEADER_RIGHT - draw.textlength(label, font=_font(34)) - 64
+    draw.rectangle((left, 33, left + 44, 61), outline=136, width=3)
+    draw.rectangle((left + 45, 41, left + 49, 53), fill=136)
+    filled = round(33 * max(0, min(100, level)) / 100)
+    if filled:
+        draw.rectangle((left + 6, 39, left + 5 + filled, 55), fill=136)
+    _text(draw, (_HEADER_RIGHT, 34), label, 34, anchor="rt", fill=136)
+
+
 def render_dashboard(
     data: DashboardData,
     *,
@@ -410,8 +433,8 @@ def render_dashboard(
     draw = ImageDraw.Draw(image)
     draw.fontmode = "1"
     _text(draw, (28, 28), f"{now:%a %d %b} · {now:%H:%M}", 44)
-    if data.meta.battery is not None and data.meta.battery < 25:
-        _text(draw, (922, 34), f"{data.meta.battery}%", 34, anchor="rt")
+    if data.meta.battery is not None:
+        _battery(draw, data.meta.battery)
     draw.line((28, 88, 1044, 88), fill=68, width=3)
     _weather(draw, data, now)
     _dishwasher(draw, data, now, next_wake)

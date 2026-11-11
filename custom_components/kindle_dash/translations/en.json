@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Kindle dashboard",
-        "description": "Select data sources and a wake schedule. Uncovered time uses the default interval. All sources tolerate unavailable data.",
+        "description": "Pick the entities shown on the dashboard and when the Kindle should refresh. Every field can be changed later under Configure.",
         "data": {
           "weather_entity": "Weather",
           "outdoor_temperature_entity": "Outdoor temperature",
@@ -14,11 +14,27 @@
           "price_forecast_entity": "Electricity price forecast",
           "dishwasher_entity": "Dishwasher schedule",
           "dishwasher_running_entity": "Dishwasher running (optional)",
-          "schedule": "Wake periods (HH:MM-HH:MM minutes)",
-          "default_interval": "Uncovered time interval (minutes)",
-          "offset_seconds": "Wake offset (seconds)",
-          "full_refresh_every": "Full refresh every N requests",
-          "grace_minutes": "Check-in grace (minutes)"
+          "schedule": "Refresh schedule",
+          "default_interval": "Refresh interval outside the schedule (minutes)",
+          "offset_seconds": "Delay after each refresh time (seconds)",
+          "full_refresh_every": "Full screen refresh every N updates",
+          "grace_minutes": "Report a problem after (minutes overdue)"
+        },
+        "data_description": {
+          "weather_entity": "Current condition and hourly forecast.",
+          "outdoor_temperature_entity": "Shown as the large temperature. Falls back to the weather entity when unavailable.",
+          "outdoor_humidity_entity": "Optional. Falls back to the weather entity.",
+          "indoor_temperature_entity": "Shown next to the house icon. Leave empty to hide it.",
+          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (€/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
+          "tomorrow_available_entity": "On when tomorrow's official prices are published.",
+          "price_forecast_entity": "Optional. Fills the 6-day chart (in light gray) for hours without official prices.",
+          "dishwasher_entity": "Load Scheduler schedule sensor whose next period gives the dishwasher start time.",
+          "dishwasher_running_entity": "Optional. When on, the card shows \"Run now\".",
+          "schedule": "When the Kindle wakes up to fetch a new image. One period per line as start-end and interval in minutes, e.g. \"08:30-00:00 30\" = every 30 minutes from 08:30 to midnight. Periods may cross midnight. Shorter intervals keep the screen fresher but use more battery. Changes reach the Kindle at its next check-in (the sleep it is already in is not shortened).",
+          "default_interval": "Used for any time of day that no line in the schedule covers.",
+          "offset_seconds": "The Kindle wakes this many seconds after each scheduled time, so a new 15-minute price slot has already started when the image is drawn. 60 is a good default.",
+          "full_refresh_every": "E-ink keeps faint ghosts of earlier images. Every Nth update the screen flashes black once to clear them. Lower = cleaner screen, more flashing.",
+          "grace_minutes": "The Check-in problem sensor turns on when the Kindle has not fetched an image this long after its expected check-in, e.g. it crashed, lost wifi or ran out of battery."
         }
       }
     },
@@ -30,7 +46,7 @@
     "step": {
       "init": {
         "title": "Kindle dashboard options",
-        "description": "Read-only token: `{token}`\n\nImage path: `{image_path}`\n\nStatus path: `{status_path}`\n\nAdd the Home Assistant URL before these paths. Regenerating the token requires updating the Kindle client.",
+        "description": "The Kindle fetches `{image_path}` from this Home Assistant (debug info: `{status_path}`).\n\nSecret token: `{token}`. Put it in TOKEN in the Kindle's config.sh.\n\nChanges here apply to the image immediately and to the refresh schedule from the Kindle's next check-in; nothing needs changing on the Kindle.",
         "data": {
           "weather_entity": "Weather",
           "outdoor_temperature_entity": "Outdoor temperature",
@@ -41,12 +57,29 @@
           "price_forecast_entity": "Electricity price forecast",
           "dishwasher_entity": "Dishwasher schedule",
           "dishwasher_running_entity": "Dishwasher running (optional)",
-          "schedule": "Wake periods (HH:MM-HH:MM minutes)",
-          "default_interval": "Uncovered time interval (minutes)",
-          "offset_seconds": "Wake offset (seconds)",
-          "full_refresh_every": "Full refresh every N requests",
-          "grace_minutes": "Check-in grace (minutes)",
+          "schedule": "Refresh schedule",
+          "default_interval": "Refresh interval outside the schedule (minutes)",
+          "offset_seconds": "Delay after each refresh time (seconds)",
+          "full_refresh_every": "Full screen refresh every N updates",
+          "grace_minutes": "Report a problem after (minutes overdue)",
           "regenerate_token": "Regenerate access token"
+        },
+        "data_description": {
+          "weather_entity": "Current condition and hourly forecast.",
+          "outdoor_temperature_entity": "Shown as the large temperature. Falls back to the weather entity when unavailable.",
+          "outdoor_humidity_entity": "Optional. Falls back to the weather entity.",
+          "indoor_temperature_entity": "Shown next to the house icon. Leave empty to hide it.",
+          "prices_entity": "Sensor with 15-minute price lists in its data_today and data_tomorrow attributes (€/kWh). Drives the 6-hour chart and the official part of the 6-day chart.",
+          "tomorrow_available_entity": "On when tomorrow's official prices are published.",
+          "price_forecast_entity": "Optional. Fills the 6-day chart (in light gray) for hours without official prices.",
+          "dishwasher_entity": "Load Scheduler schedule sensor whose next period gives the dishwasher start time.",
+          "dishwasher_running_entity": "Optional. When on, the card shows \"Run now\".",
+          "schedule": "When the Kindle wakes up to fetch a new image. One period per line as start-end and interval in minutes, e.g. \"08:30-00:00 30\" = every 30 minutes from 08:30 to midnight. Periods may cross midnight. Shorter intervals keep the screen fresher but use more battery. Changes reach the Kindle at its next check-in (the sleep it is already in is not shortened).",
+          "default_interval": "Used for any time of day that no line in the schedule covers.",
+          "offset_seconds": "The Kindle wakes this many seconds after each scheduled time, so a new 15-minute price slot has already started when the image is drawn. 60 is a good default.",
+          "full_refresh_every": "E-ink keeps faint ghosts of earlier images. Every Nth update the screen flashes black once to clear them. Lower = cleaner screen, more flashing.",
+          "grace_minutes": "The Check-in problem sensor turns on when the Kindle has not fetched an image this long after its expected check-in, e.g. it crashed, lost wifi or ran out of battery.",
+          "regenerate_token": "Creates a new secret for the image URL and invalidates the old one. The Kindle stops updating until its config.sh is given the new token."
         }
       }
     },
