@@ -1,8 +1,10 @@
 # Development and offline previews
 
-The development environment pins CPython 3.14.2, Home Assistant 2026.11.0,
+The development environment pins CPython 3.14.10, Home Assistant 2026.11.1,
 Pillow 13.0.0 (HA's core pin), and pytest-homeassistant-custom-component 0.13.375.
-`uv.lock` locks the complete environment. The integration itself does not ship
+`uv.lock` locks the complete environment. Ruff 0.17.5 and mypy 2.4.1 validate
+the tooling upgrade. The obsolete `types-Pillow` package was removed: Pillow
+has shipped its own type information since 10.3.0. The integration itself does not ship
 or pin a second Pillow installation.
 
 ```sh
@@ -27,7 +29,7 @@ without Home Assistant installed.
 
 As of this implementation, the latest published custom-component plugin,
 0.13.375, targets HA 2026.10.4; there is no published 2026.11-matching release.
-The uv dependency override deliberately tests the real HA 2026.11.0 package.
+The uv dependency override deliberately tests the real HA 2026.11.1 package.
 `tests/conftest.py` supplies only two import adapters:
 
 1. Load HA before respx so HA can install its required httpx2 aliases.
@@ -47,9 +49,17 @@ Ruff, mypy, pytest, and all preview scenarios. The tests use local HA fixtures a
 an unauthenticated loopback HTTP client, never an external Home Assistant or a
 Kindle on the network.
 
-The HA 2026.11.0 source validator was also run locally against this integration:
+The HA 2026.11.1 source validator was also run locally against this integration:
 24 integration validation plugins completed with **0 invalid integrations**.
 The upstream HACS manifest schemas and local brand asset presence passed locally.
 The full HACS action additionally checks public GitHub repository metadata
 (description/topics/issues/license) and the repository information file; those
 checks require the code to be present on GitHub and are not a local pass claim.
+
+### 2026-11-14 dependency validation
+
+Validated on CPython 3.14.10 / HA 2026.11.1: 212 tests, Ruff, mypy, and all nine
+offline preview scenarios passed. Pillow 13's bundled types expose potentially
+fractional font bounds; vertical label mask sizes now round up to integer pixels.
+The bundled fonts still produce identical rendered previews. Runtime Pillow stays
+at Core's 13.0.0 pin; no extra package is installed into Home Assistant.

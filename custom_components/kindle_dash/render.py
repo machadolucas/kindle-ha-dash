@@ -311,7 +311,7 @@ def _vertical_text(
 ) -> None:
     """Place a crisp black 90-degree label in its own quarter-hour column."""
     bounds = _font(size).getbbox(value, anchor="lt")
-    mask = Image.new("1", (bounds[2] - bounds[0], bounds[3] - bounds[1]))
+    mask = Image.new("1", (ceil(bounds[2] - bounds[0]), ceil(bounds[3] - bounds[1])))
     ImageDraw.Draw(mask).text((0, 0), value, font=_font(size), fill=1, anchor="lt")
     mask = mask.rotate(90, expand=True)
     draw.bitmap((round(center - mask.width / 2), round(bottom - mask.height)), mask, fill=0)

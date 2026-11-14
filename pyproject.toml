@@ -1,22 +1,21 @@
 [project]
 name = "kindle-ha-dash"
 version = "0.1.0"
-requires-python = "==3.14.2"
+requires-python = "==3.14.10"
 dependencies = []
 
 [dependency-groups]
 dev = [
-  "homeassistant==2026.11.0",
+  "homeassistant==2026.11.1",
   "pytest-homeassistant-custom-component==0.13.375",
-  "ruff==0.14.4",
-  "mypy==1.19.1",
-  "types-Pillow>=10.2",
+  "ruff==0.17.5",
+  "mypy==2.4.1",
 ]
 
 # The latest published plugin still pins HA 2026.10.4. Run its fixtures against
 # the actual target rather than silently testing the wrong Home Assistant.
 [tool.uv]
-override-dependencies = ["homeassistant==2026.11.0"]
+override-dependencies = ["homeassistant==2026.11.1"]
 cache-dir = ".cache/uv"
 
 [tool.pytest.ini_options]
